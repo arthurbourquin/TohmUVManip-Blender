@@ -9,12 +9,12 @@ bl_info = {
 }
 
 import bpy
-from . import operators
 from . import ui
+from . import operators
 
 
 classes = (
-    operators.VIEW3D_PT_UvGraph_Pannel,
+    ui.VIEW3D_PT_UvGraph_Pannel,
 
     operators.OBJECT_OT_PrintUvGraph,
     operators.OBJECT_OT_StraightenPaths,

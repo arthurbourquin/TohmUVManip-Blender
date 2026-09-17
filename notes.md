@@ -1,19 +1,8 @@
-### Ancienne structure
+## structure
 
 `local/`
     `work/`
-        `TohmUVManip/`
-            `TohmUVManip.py` avec tout dedans
-`local/`
-    `BlenderAddons/`
-        `TohmUVManip.py` symlink de fichier `local/work/TohmUVManip/TohmUVManip.py`
-
-
-### Nouvelle structure
-
-`local/`
-    `work/`
-        `TohmUVManip/` repo_local
+        `TohmUVManip-Blender/` repo_local
             `.gitignore`
             `README.md`
             `TohmUVManip/`
@@ -29,7 +18,11 @@ toutes les petites classes genre UvVertDict ou UvCo sont remplacées par list, t
 
 `local/`
     `BlenderAddons/`
-        `TohmUVManip/` symlink de dossier `local/work/TohmUVManip/TohmUVManip`
+        `TohmUVManip/` symlink de dossier `local/work/TohmUVManip-Blender/TohmUVManip`
 `github/`
     `TohmUVManip-Blender/` repo distant
+
+
+symlink mac:
+ln -s /Volumes/Macintosh\ HD/Users/arthurbourquin/LOCAL/Guiteub/TohmUVManip-Blender/TohmUVManip /Volumes/Macintosh\ HD/Users/arthurbourquin/Library/Application\ Support/Blender/5.2/scripts/addons/TohmUVManip
 

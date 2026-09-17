@@ -1,7 +1,8 @@
 import math
 
-import UvVert
-import UvConnectedGraph
+from .UvVert import UvVert
+from .UvConnectedGraph import UvConnectedGraph
+
 
 class UvGraph:
     def __init__(self, obj, mesh, bm, uvmap, uvsync):

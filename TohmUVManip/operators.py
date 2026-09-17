@@ -1,5 +1,6 @@
 import bpy
 import bmesh
+import math
 
 from .UvGraph import UvGraph
 
@@ -11,7 +12,7 @@ from .UvGraph import UvGraph
 # HELPER
 
 def get_bmesh_stuff():
-    obj = bpy.context.active._object # working on uvs, we want the active object
+    obj = bpy.context.active_object # working on uvs, we want the active object
     mesh = obj.data
     bm = bmesh.from_edit_mesh(mesh)
     uvmap = bm.loops.layers.uv.active
@@ -21,17 +22,69 @@ def get_bmesh_stuff():
 
 # FUNCTIONS
 
-def print_uvgraph():
-    [obj, mesh, bm, uvmap, uvsync] = get_bmesh_stuff()
-    uvgraph = UvGraph(bm)
-    uvgraph.print_self(0)
+# Selection
 
-
-def straighten():
-    [obj, mesh, bm, uvmap, uvsync] = get_bmesh_stuff()
-    uvgraph = UvGraph(bm)
-    uvgraph.straighten()
+def select_edges_by_angle(angle, tolerance, additive):
+    [obj, mesh, bm, uvmap, sync] = get_bmesh_stuff()
+    if sync: bm.uv_select_sync_from_mesh()
+    angle = (angle * math.pi / 180) % math.pi
+    tolerance = (tolerance * math.pi / 180) % math.pi
+    for f in bm.faces:
+        for l in f.loops:
+            u1, v1 = l[uvmap].uv
+            u2, v2 = l.link_loop_next[uvmap].uv
+            du = u2 - u1
+            dv = v2 - v1
+            if du == 0 and dv == 0:
+                continue
+            a = math.atan2(dv, du) % math.pi
+            diff = abs(a - angle)
+            diff = min(diff, math.pi - diff)
+            select = diff < tolerance
+            if select:
+                l.uv_select_edge_set(True)
+            elif not additive:
+                l.uv_select_edge_set(False)
+    if sync: bm.uv_select_sync_to_mesh()
     bmesh.update_edit_mesh(mesh)
+
+
+
+# Modification
+
+def straignten_paths():
+    [obj, mesh, bm, uvmap, sync] = get_bmesh_stuff()
+    uvgraph = UvGraph(obj, mesh, bm, uvmap, sync)
+    uvgraph.straignten_paths()
+    bmesh.update_edit_mesh(mesh)
+
+def reverse_paths():
+    [obj, mesh, bm, uvmap, sync] = get_bmesh_stuff()
+    uvgraph = UvGraph(obj, mesh, bm, uvmap, sync)
+    uvgraph.reverse_paths()
+    bmesh.update_edit_mesh(mesh)
+
+def align_paths_on_grid():
+    [obj, mesh, bm, uvmap, sync] = get_bmesh_stuff()
+    uvgraph = UvGraph(obj, mesh, bm, uvmap, sync)
+    uvgraph.align_paths_on_grid()
+    bmesh.update_edit_mesh(mesh)
+
+
+def put_path_en_bas():
+    [obj, mesh, bm, uvmap, sync] = get_bmesh_stuff()
+    uvgraph = UvGraph(obj, mesh, bm, uvmap, sync)
+    uvgraph.put_path_en_bas()
+    bmesh.update_edit_mesh(mesh)
+
+
+# Print
+
+def print_uvgraph(verbosity):
+    [obj, mesh, bm, uvmap, sync] = get_bmesh_stuff()
+    uvgraph = UvGraph(obj, mesh, bm, uvmap, sync)
+    uvgraph.print_self(verbosity)
+
 
 
 #=========#=========#=========#=========#=========#=========#=========#=========
@@ -43,8 +96,13 @@ class OBJECT_OT_PrintUvGraph(bpy.types.Operator):
     bl_label = "Print UV Graph"
     bl_options = {'REGISTER', 'UNDO'}
 
+    verbosity: bpy.props.IntProperty(name="verbosity", default=0)
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
     def execute(self, context):
-        print_uvgraph()
+        print_uvgraph(self.verbosity)
         return {'FINISHED'}
 
 
