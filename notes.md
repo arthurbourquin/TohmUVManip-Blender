@@ -25,7 +25,7 @@
                     `uv_vert.py`
                     `uv_connected_graph.py`
                     `uv_graph.py` importe UvVert UvConnectedGraphs
-toutes les petites classes genre UvVertDict ou OvCo sont remplacées par list, tuple, set, et dict
+toutes les petites classes genre UvVertDict ou UvCo sont remplacées par list, tuple, set, et dict
 
 `local/`
     `BlenderAddons/`
