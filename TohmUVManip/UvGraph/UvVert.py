@@ -9,6 +9,7 @@ class UvVert:
         self.depth = -1
         self.select = False
         self.uvmap = uvmap
+        self.isvisited = False # utility for each BFS
 
     @property
     def isleaf(self): return len(self.neighbors.values()) <= 1

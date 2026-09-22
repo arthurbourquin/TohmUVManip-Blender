@@ -287,7 +287,7 @@ class UvGraph:
     # PRINT
 
     def print_self(self, verbosity):
-        print("### NOUVEAU PRINT_SELF ###")
+        print('=== UvGraph Diagnostic ===')
         # helpers, decoration
         def print_uvv_header():
             print("| uv  | depth | type      | idx-adj ")
@@ -302,21 +302,20 @@ class UvGraph:
             print(f"| {uvv.uv} | {d:>2}    | {flags}| {i:>2}-{adj}")
         # core
         if verbosity > 0:
-            print(f"========================================")
-            print("UvGraph self print (verbose)")
-            print(f"obj {self}")
-            print('')
+            print(f"UvGraph: {self}")
 
-            print(f"{len(self.uvverts)} uvverts")
-
-        print(f"{len(self.graphs)} graphs")
+        print(f"{len(self.graphs)} connected graphs")
 
         for g in sorted(self.graphs, key=lambda g: g.index):
             flag_values = [g.issingleton, g.ispath, g.isring, g.istree, g.ispartialmesh, g.iscyclic]
             flag_labels = ['singleton ', 'path ', 'ring ', 'tree ', 'partial-mesh ', 'cyclic ']
             flags = ''.join(flag_labels[i] if flag else '' for i,flag in enumerate(flag_values))
-            print(f'graph {g.index}, {g.count} uvverts, {flags}, length: {g.length: <6.4f}')
-        print('')
+            line = f'g {g.index: >4}, {g.count: >4} uvv, '
+            if verbosity > 0:
+                line += f'{len(g.uvedges)} uve, '
+            line += f'{flags}, length: {g.length: <6.4f}'
+            print(line)
+
 
         if verbosity > 2:
             for g in sorted(self.graphs, key=lambda g: g.index):
@@ -326,7 +325,7 @@ class UvGraph:
                 if g.isring: types += "ring "
                 if g.istree: types += "tree "
                 if g.ispartialmesh: types += "mesh "
-                if g.iicyclic: types += "cyclic "
+                if g.iscyclic: types += "cyclic "
                 print(f'\n| graph {g.index:>2} {types}')
                 print_uvv_header()
                 for uvv in sorted(g.uvverts.values(), key=lambda uvv: uvv.depth):
@@ -339,3 +338,5 @@ class UvGraph:
             for uvv in self.uvverts.values():
                 if not uvv.select:
                     print_uvv(uvv)
+
+        print('==========================')

@@ -30,31 +30,27 @@ class UvConnectedGraph:
         self.sorted_uvverts = []
 
     def update(self):
-        print(self.uvverts)
         self.count = len(self.uvverts)
         # uv edges
-        self.uvedges = []
+        self.uvedges = set()
         self.degree = 0
         from collections import deque
+        for uvv in self.uvverts.values():
+            uvv.isvisited = False
         if self.count >= 2:
             queue = deque([self.root])
-            def walk(uvv):
-                d = uvv.depth
-                children = [
-                    child
-                    for child in uvv.neighbors.values()
-                    if child.depth == d + 1
-                ]
-                self.degree = max(self.degree, len(children))
-                for c in children:
-                    self.uvedges.append(UvEdge(uvv, c))
-                queue.extend(children)
             while queue:
                 uvv = queue.popleft()
-                walk(uvv)
+                uvv.isvisited = True
+                neighbors = uvv.neighbors.values()
+                self.degree = max(self.degree, len(neighbors))
+                for n in neighbors:
+                    self.uvedges.add(UvEdge(uvv, n))
+                    if not n.isvisited:
+                        queue.append(n)
         # topology porperties
         self.issingleton = self.count == 1
-        self.iscyclic = len(self.uvedges) > self.count - 1
+        self.iscyclic = len(self.uvedges) > (self.count - 1)
         self.istree = not self.iscyclic and self.degree >= 2
         self.ispath = not self.iscyclic and not self.istree and not self.issingleton
         self.isring = self.iscyclic and not self.istree
