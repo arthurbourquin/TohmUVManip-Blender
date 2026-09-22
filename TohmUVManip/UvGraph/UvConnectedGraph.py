@@ -18,7 +18,7 @@ class UvConnectedGraph:
         self.root = None
 
         self.degree = None
-        self.uvedges = None
+        self.uvedges = set()
         self.length = None
         self.center_median = None
         self.center_average = None
@@ -29,11 +29,53 @@ class UvConnectedGraph:
         self.tail = None
         self.sorted_uvverts = []
 
+    def set_singleton(self):
+        self.issingleton = True
+        self.ispath = False
+        self.isring = False
+        self.istree = False
+        self.ispartialmesh = False
+        self.iscyclic = False
+        self.degree = 0
+        self.length = 0
+        uv = self.uvverts.values()[0].uv
+        self.center_median = uv
+        self.center_average = uv
+        self.bbox = [uv, uv]
+
+    def set_single_edge(self):
+        self.issingleton = False
+        self.ispath = True
+        self.isring = False
+        self.istree = False
+        self.ispartialmesh = False
+        self.iscyclic = False
+        self.degree = 1
+        uvv1, uvv2 = self.uvverts.values()
+        uvedge = UvEdge(uvv1, uvv2)
+        self.uvedges.add(uvedge)
+        self.length = uvedge.length
+        u1, v1 = uvv1.uv
+        u2, v2 = uvv2.uv
+        cu = (u1 + u2) / 2
+        cv = (v1 + v2) / 2
+        self.center_median = (cu, cv)
+        self.center_average = (cu, cv)
+        self.bbox = [[min(u1, u2), min(v1, v2)], max(u1, u2), max(v1, v2)]
+
     def update(self):
         self.count = len(self.uvverts)
+
+        if self.count == 1:
+            self.set_singleton()
+            return
+
+        if self.count == 2:
+            self.set_single_edge()
+            return
+
         # uv edges
-        self.uvedges = set()
-        self.degree = 0
+        self.degree = 1
         from collections import deque
         for uvv in self.uvverts.values():
             uvv.isvisited = False
@@ -43,18 +85,17 @@ class UvConnectedGraph:
                 uvv = queue.popleft()
                 uvv.isvisited = True
                 neighbors = uvv.neighbors.values()
-                self.degree = max(self.degree, len(neighbors))
+                self.degree = max(self.degree, len(neighbors) - 1)
                 for n in neighbors:
                     self.uvedges.add(UvEdge(uvv, n))
                     if not n.isvisited:
                         queue.append(n)
         # topology porperties
-        self.issingleton = self.count == 1
         self.iscyclic = len(self.uvedges) > (self.count - 1)
         self.istree = not self.iscyclic and self.degree >= 2
         self.ispath = not self.iscyclic and not self.istree and not self.issingleton
-        self.isring = self.iscyclic and not self.istree
-        self.ispartialmesh = self.iscyclic and self.istree
+        self.isring = self.iscyclic and self.degree == 1
+        self.ispartialmesh = self.iscyclic and self.degree > 1
         if self.ispath:
             self.sorted_uvverts = sorted(self.uvverts.values(), key=lambda uvv: uvv.depth)
             self.head = self.sorted_uvverts[0]

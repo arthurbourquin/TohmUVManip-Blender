@@ -312,7 +312,7 @@ class UvGraph:
             flags = ''.join(flag_labels[i] if flag else '' for i,flag in enumerate(flag_values))
             line = f'g {g.index: >4}, {g.count: >4} uvv, '
             if verbosity > 0:
-                line += f'{len(g.uvedges)} uve, '
+                line += f'{len(g.uvedges)} uve, degree: {g.degree}, '
             line += f'{flags}, length: {g.length: <6.4f}'
             print(line)
 
