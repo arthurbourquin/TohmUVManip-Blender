@@ -75,12 +75,11 @@ def select_edges_by_angle(angle, tolerance, additive):
 
 # Modification
 
-def straighten_paths(center, keeplength):
-    print('wesh Blender Development')
+def straighten_paths(keeplength):
     [valid, obj, mesh, bm, uvmap, uvsync] = get_bmesh_stuff()
     if not valid: return
     uvgraph = UvGraph(obj, mesh, bm, uvmap, uvsync)
-    uvgraph.straighten_paths(center, keeplength)
+    uvgraph.straighten_paths(keeplength)
     bmesh.update_edit_mesh(mesh)
 
 def reverse_paths():
@@ -138,20 +137,11 @@ class OBJECT_OT_StraightenPaths(bpy.types.Operator):
 
     keeplength:   bpy.props.BoolProperty(name="Keep Length", default=False)
 
-    center: bpy.props.EnumProperty(
-        name="Center",
-        items=[
-            ('BBOX', "Bounding Box", "Use the bounding box center"),
-            ('HEADTAIL', "Head-Tail", "Use head-tail midpoint"),
-        ],
-        default='BBOX'
-    )
-
     def invoke(self, context, event):
         return self.execute(context)
 
     def execute(self, context):
-        straighten_paths(self.center, self.keeplength)
+        straighten_paths(self.keeplength)
         return {'FINISHED'}
 
     def check(self, context):

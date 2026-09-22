@@ -1,6 +1,5 @@
-print("### UvGraph.py RELOADED ###")
-
 import math
+from mathutils import Vector
 
 from .UvVert import UvVert
 from .UvConnectedGraph import UvConnectedGraph
@@ -141,10 +140,6 @@ class UvGraph:
         [width, height] = [maxu - minu, maxv - minv]
         return [[minu, minv], [maxu, maxv], [width, height]]
 
-
-    # BMESH / MESH / UV MODIFICATIONS
-
-    # helpers
     def lerp(self, a, b, w):
         return a * (1 - w) + b * w
 
@@ -153,6 +148,25 @@ class UvGraph:
         dv = uvv1.uv[1] - uvv2.uv[1]
         return math.sqrt(du*du + dv*dv)
 
+    def reverse_path(self, path):
+        if not path.ispath:
+            return False
+        path.sorted_uvverts.reverse()
+        for i, uvv in enumerate(path.sorted_uvverts):
+            uvv.depth = i
+        path.head, path.tail = path.tail, path.head
+        return True
+
+    def reverse_paths(self):
+        for g in self.graphs:
+            self.reverse_path(g)
+
+
+    #################################
+    # BMESH / MESH / UV MODIFICATIONS
+
+
+    # STRAIGHTENING
 
     def straighten_paths_headtail(self):
         paths = [g for g in  self.graphs if g.ispath]
@@ -168,29 +182,28 @@ class UvGraph:
     def straighten_paths_headtail_keeplength(self):
         paths = [g for g in  self.graphs if g.ispath]
         for p in paths:
-            u1, v1 = p.head.uv
-            u2, v2 = p.tail.uv
+            uv1 = Vector(p.head.uv)
+            uv2 = Vector(p.tail.uv)
+            center = (uv1 + uv2) / 2
+            ratio = p.length / self.dist(p.head, p.tail)
+            u1, v1 = center + (uv1 - center) * ratio
+            u2, v2 = center + (uv2 - center) * ratio
             for i, uvv in enumerate(p.sorted_uvverts):
                 w = i / (p.count - 1)
                 u = self.lerp(u1, u2, w)
                 v = self.lerp(v1, v2, w)
                 uvv.set_uv(u, v)
 
-    def straighten_paths(self, center='HEADTAIL', keep_length=False):
-        self.straighten_paths_headtail()            
+    def straighten_paths(self, keep_length=False):
+        if keep_length:
+            self.straighten_paths_headtail_keeplength()
+        else:
+            self.straighten_paths_headtail()
 
-    def reverse_path(self, path):
-        if not path.ispath:
-            return False
-        path.sorted_uvverts.reverse()
-        for i, uvv in enumerate(path.sorted_uvverts):
-            uvv.depth = i
-        path.head, path.tail = path.tail, path.head
-        return True
 
-    def reverse_paths(self):
-        for g in self.graphs:
-            self.reverse_path(g)
+
+
+    # ALIGN PATHS ON A GRID
 
     def align_paths_on_grid(self):
         print('align paths on grid')
@@ -275,6 +288,8 @@ class UvGraph:
                         u = self.lerp(minu, maxu, wx)
                         v = self.lerp(minv, maxv, wy)
                         uvv.set_uv(u, v)
+
+    # TEST
 
     def put_path_en_bas(self):
         for g in self.graphs:

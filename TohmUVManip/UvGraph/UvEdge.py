@@ -1,5 +1,3 @@
-print("### UvEdge.py RELOADED ###")
-
 from math import sqrt, atan2
 
 class UvEdge:
