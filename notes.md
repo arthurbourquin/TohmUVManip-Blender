@@ -26,3 +26,7 @@ toutes les petites classes genre UvVertDict ou UvCo sont remplacées par list, t
 symlink mac:
 ln -s /Volumes/Macintosh\ HD/Users/arthurbourquin/LOCAL/Guiteub/TohmUVManip-Blender/TohmUVManip /Volumes/Macintosh\ HD/Users/arthurbourquin/Library/Application\ Support/Blender/5.2/scripts/addons/TohmUVManip
 
+symlink windows:
+New-Item -ItemType SymbolicLink `
+    -Path C:\Users\arthu\AppData\Roaming\Blender Foundation\Blender\5.2\scripts\addons\TohmUVManip `
+    -Target C:\LOCAL\Guiteube\Blender-Addon\TohmUVManip-Blender\TohmUVManip

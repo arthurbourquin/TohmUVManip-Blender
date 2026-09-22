@@ -9,8 +9,18 @@ bl_info = {
 }
 
 import bpy
-from . import ui
+
+import importlib
+
+if "operators" in locals():
+    importlib.reload(operators)
+
+if "ui" in locals():
+    importlib.reload(ui)
+
+
 from . import operators
+from . import ui
 
 
 classes = (
@@ -18,7 +28,6 @@ classes = (
 
     operators.OBJECT_OT_PrintUvGraph,
     operators.OBJECT_OT_StraightenPaths,
-    operators.OBJECT_OT_PutPathsEnBas,
     operators.OBJECT_OT_ReversePaths,
     operators.OBJECT_OT_AlignPathsOnGrid,
     operators.OBJECT_OT_SelectByAngle,

@@ -1,3 +1,5 @@
+print("### UvGraph.py RELOADED ###")
+
 import math
 
 from .UvVert import UvVert
@@ -14,8 +16,8 @@ class UvGraph:
 
         self.uvverts = {} # all uverts, selected or not
         self.graphs = []
-        self.precision = -9
-        self.epsilon = math.pow(10, -self.precision)
+        self.precision = 9
+        self.epsilon = 10 ** -self.precision
  
         self.init()
 
@@ -103,22 +105,26 @@ class UvGraph:
             self.graphs.append(graph)
 
         for g in self.graphs:
-            max_degree = max((len(uvv.neighbors) for uvv in g.uvverts.values()), default=0)
-            total_half_edges = sum(len(uvv.neighbors) for uvv in g.uvverts.values())
-            edges = total_half_edges // 2
-            iscyclic = edges > g.count - 1
-            has_branch = max_degree > 2
 
-            g.issingleton = g.count == 1
-            g.ispath = not iscyclic and not has_branch and not g.issingleton
-            g.isring = iscyclic and not has_branch
-            g.istree = not iscyclic and has_branch
-            g.ispartialmesh = iscyclic and has_branch
+            g.update()
 
-            if g.ispath:
-                g.sorted_uvverts = sorted(g.uvverts.values(), key=lambda uvv: uvv.depth)
-                g.head = g.sorted_uvverts[0]
-                g.tail = g.sorted_uvverts[g.count - 1]
+            if False:
+                max_degree = max((len(uvv.neighbors) for uvv in g.uvverts.values()), default=0)
+                total_half_edges = sum(len(uvv.neighbors) for uvv in g.uvverts.values())
+                edges = total_half_edges // 2
+                iscyclic = edges > g.count - 1
+                has_branch = max_degree > 2
+
+                g.issingleton = g.count == 1
+                g.ispath = not iscyclic and not has_branch and not g.issingleton
+                g.isring = iscyclic and not has_branch
+                g.istree = not iscyclic and has_branch
+                g.ispartialmesh = iscyclic and has_branch
+
+                if g.ispath:
+                    g.sorted_uvverts = sorted(g.uvverts.values(), key=lambda uvv: uvv.depth)
+                    g.head = g.sorted_uvverts[0]
+                    g.tail = g.sorted_uvverts[g.count - 1]
 
     # UTILITY
 
@@ -138,29 +144,48 @@ class UvGraph:
 
     # BMESH / MESH / UV MODIFICATIONS
 
+    # helpers
     def lerp(self, a, b, w):
         return a * (1 - w) + b * w
 
-    def straignten_paths(self):
-        for g in self.graphs:
-            if g.ispath:
-                u1, v1 = g.head.uv
-                u2, v2 = g.tail.uv
-                for i, uvv in enumerate(g.sorted_uvverts):
-                    w = i / (g.count - 1)
-                    u = self.lerp(u1, u2, w)
-                    v = self.lerp(v1, v2, w)
-                    uvv.set_uv(u, v)
+    def dist(self, uvv1, uvv2):
+        du = uvv1.uv[0] - uvv2.uv[0]
+        dv = uvv1.uv[1] - uvv2.uv[1]
+        return math.sqrt(du*du + dv*dv)
 
-    def reverse_path(self, graph):
-        if not graph.ispath:
+
+    def straighten_paths_headtail(self):
+        paths = [g for g in  self.graphs if g.ispath]
+        for p in paths:
+            u1, v1 = p.head.uv
+            u2, v2 = p.tail.uv
+            for i, uvv in enumerate(p.sorted_uvverts):
+                w = i / (p.count - 1)
+                u = self.lerp(u1, u2, w)
+                v = self.lerp(v1, v2, w)
+                uvv.set_uv(u, v)
+
+    def straighten_paths_headtail_keeplength(self):
+        paths = [g for g in  self.graphs if g.ispath]
+        for p in paths:
+            u1, v1 = p.head.uv
+            u2, v2 = p.tail.uv
+            for i, uvv in enumerate(p.sorted_uvverts):
+                w = i / (p.count - 1)
+                u = self.lerp(u1, u2, w)
+                v = self.lerp(v1, v2, w)
+                uvv.set_uv(u, v)
+
+    def straighten_paths(self, center='HEADTAIL', keep_length=False):
+        self.straighten_paths_headtail()            
+
+    def reverse_path(self, path):
+        if not path.ispath:
             return False
-
-        graph.sorted_uvverts.reverse()
-
-        for i, uvv in enumerate(graph.sorted_uvverts):
+        path.sorted_uvverts.reverse()
+        for i, uvv in enumerate(path.sorted_uvverts):
             uvv.depth = i
-        graph.head, graph.tail = graph.tail, graph.head
+        path.head, path.tail = path.tail, path.head
         return True
 
     def reverse_paths(self):
@@ -168,8 +193,7 @@ class UvGraph:
             self.reverse_path(g)
 
     def align_paths_on_grid(self):
-        print('=== Align Path On A Grid ===')
-
+        print('align paths on grid')
         # get overall bounding box (befor straightening)
         uvverts = []
         for g in self.graphs:
@@ -177,13 +201,19 @@ class UvGraph:
                 uvverts.extend(g.uvverts.values())
         [[minu, minv], [maxu, maxv], [width, height]] = self.get_bounding_box(uvverts)
 
+        print(f'bbox: min u: {minu}, min v: {minv}, max u: {maxu}, max v: {maxv}, width: {width}, height: {height}')
+        if width == 0 and height == 0: # can't align...
+            return
+
         # straighten all paths
-        self.straignten_paths()
+        self.straighten_paths()
 
         # define layout (vertical or horzontal)
         vertical_count = 0
         horizontal_count = 0
         paths = [g for g in self.graphs if g.ispath]
+        if not paths:
+            return
         for p in paths:
             u1, v1 = p.head.uv
             u2, v2 = p.tail.uv
@@ -200,30 +230,51 @@ class UvGraph:
             spaths = sorted(paths, key=lambda p: p.get_center("head-tail")[0])
 
         # modifiy coordinates
-        if horizontal_paths_piled_vertically:
-            countY = len(spaths)
-            for y, p in enumerate(spaths):
+        # - single path case
+        if len(spaths) == 1:
+            print('single path')
+            p = spaths[0]
+            if width > height:
                 countX = p.count
-                reverse = p.head.uv[0] > p.tail.uv[0]
+                v = (maxv + minv) / 2
                 for x, uvv in enumerate(p.sorted_uvverts):
-                    wx = (x / (countX - 1)) if not reverse else (1 - x / (countX - 1))
-                    wy = y / (countY - 1)
-                    u = self.lerp(minu, maxu, wx)
-                    v = self.lerp(minv, maxv, wy)
-                    uvv.set_uv(u, v)
-        else:
-            countX = len(spaths)
-            for x, p in enumerate(spaths):
-                countY = p.count
-                reverse = p.head.uv[1] > p.tail.uv[1]
-                for y, uvv in enumerate(p.sorted_uvverts):
                     wx = x / (countX - 1)
-                    wy = (y / (countY - 1)) if not reverse else (1 - y / (countY - 1))
                     u = self.lerp(minu, maxu, wx)
+                    uvv.set_uv(u, v)
+            else:
+                countY = p.count
+                u = (maxu + maxv) / 2
+                for y, uvv in enumerate(p.sorted_uvverts):
+                    wy = y / (countY - 1)
                     v = self.lerp(minv, maxv, wy)
                     uvv.set_uv(u, v)
-
-        [[minu, minv], [maxu, maxv], [width, height]] = self.get_bounding_box(uvverts)
+        # - several paths case
+        else:
+            print(f'path count: {len(spaths)}')
+            if horizontal_paths_piled_vertically:
+                countY = len(spaths)
+                for y, p in enumerate(spaths):
+                    countX = p.count
+                    reverse = p.head.uv[0] > p.tail.uv[0]
+                    for x, uvv in enumerate(p.sorted_uvverts):
+                        wx = (x / (countX - 1))                     # no div 0, path has min 2 uvv
+                        wy = 1 if countY == 1 else y / (countY - 1) # if div 0, single path
+                        if reverse:
+                            wx = 1 - wx
+                        u = self.lerp(minu, maxu, wx)
+                        v = self.lerp(minv, maxv, wy)
+                        uvv.set_uv(u, v)
+            else:
+                countX = len(spaths)
+                for x, p in enumerate(spaths):
+                    countY = p.count
+                    reverse = p.head.uv[1] > p.tail.uv[1]
+                    for y, uvv in enumerate(p.sorted_uvverts):
+                        wx = x / (countX - 1)
+                        wy = (y / (countY - 1)) if not reverse else (1 - y / (countY - 1))
+                        u = self.lerp(minu, maxu, wx)
+                        v = self.lerp(minv, maxv, wy)
+                        uvv.set_uv(u, v)
 
     def put_path_en_bas(self):
         for g in self.graphs:
@@ -233,12 +284,23 @@ class UvGraph:
                     uvv.set_uv(pos, 0)
 
 
-
-
-
     # PRINT
 
     def print_self(self, verbosity):
+        print("### NOUVEAU PRINT_SELF ###")
+        # helpers, decoration
+        def print_uvv_header():
+            print("| uv  | depth | type      | idx-adj ")
+            print("|-----|-------|-----------|--------- - -")
+        def print_uvv(uvv):
+            i = uvv.index
+            d = uvv.depth
+            adj = [uvv.index for uvv in uvv.neighbors.values()]
+            flag_values = [uvv.isroot, uvv.isleaf]
+            flag_labels = ['root ', 'leaf ']
+            flags = ''.join(flag_labels[i] if flag else '.... ' for i,flag in enumerate(flag_values))
+            print(f"| {uvv.uv} | {d:>2}    | {flags}| {i:>2}-{adj}")
+        # core
         if verbosity > 0:
             print(f"========================================")
             print("UvGraph self print (verbose)")
@@ -250,26 +312,13 @@ class UvGraph:
         print(f"{len(self.graphs)} graphs")
 
         for g in sorted(self.graphs, key=lambda g: g.index):
-            flag_values = [g.issingleton, g.ispath, g.isring, g.istree, g.ispartialmesh]
-            flag_labels = ['singleton ', 'path ', 'ring ', 'tree ', 'mesh ']
+            flag_values = [g.issingleton, g.ispath, g.isring, g.istree, g.ispartialmesh, g.iscyclic]
+            flag_labels = ['singleton ', 'path ', 'ring ', 'tree ', 'partial-mesh ', 'cyclic ']
             flags = ''.join(flag_labels[i] if flag else '' for i,flag in enumerate(flag_values))
-            print(f'graph {g.index}, {g.count} uvverts, {flags}')
+            print(f'graph {g.index}, {g.count} uvverts, {flags}, length: {g.length: <6.4f}')
         print('')
 
         if verbosity > 2:
-            def print_uvv_header():
-                print("| uv  | depth | type      | idx-adj ")
-                print("|-----|-------|-----------|--------- - -")
-
-            def  print_uvv(uvv):
-                i = uvv.index
-                d = uvv.depth
-                adj = [uvv.index for uvv in uvv.neighbors.values()]
-                flag_values = [uvv.isroot, uvv.isleaf]
-                flag_labels = ['root ', 'leaf ']
-                flags = ''.join(flag_labels[i] if flag else '.... ' for i,flag in enumerate(flag_values))
-                print(f"| {uvv.uv} | {d:>2}    | {flags}| {i:>2}-{adj}")
-
             for g in sorted(self.graphs, key=lambda g: g.index):
                 types = ""
                 if g.issingleton: types += "singleton "
@@ -277,6 +326,7 @@ class UvGraph:
                 if g.isring: types += "ring "
                 if g.istree: types += "tree "
                 if g.ispartialmesh: types += "mesh "
+                if g.iicyclic: types += "cyclic "
                 print(f'\n| graph {g.index:>2} {types}')
                 print_uvv_header()
                 for uvv in sorted(g.uvverts.values(), key=lambda uvv: uvv.depth):

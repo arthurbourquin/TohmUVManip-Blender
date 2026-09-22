@@ -1,3 +1,5 @@
+print("### UvVert.py RELOADED ###")
+
 class UvVert:
     def __init__(self, uvmap):
         self.uv = None
