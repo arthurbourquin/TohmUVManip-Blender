@@ -1,5 +1,5 @@
 bl_info = {
-    "name": "UV Manip",
+    "name": "Tohm UV Manip",
     "author": "Tohm",
     "version": (0, 1, 0),
     "blender": (5, 2, 0),

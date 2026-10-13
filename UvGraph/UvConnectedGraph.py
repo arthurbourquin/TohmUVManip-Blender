@@ -1,6 +1,8 @@
-from math import inf
-
+from mathutils import Vector, Matrix
 from .UvEdge import UvEdge
+
+from .utils import lerp, dist, get_angle, get_bounding_box, get_center
+
 
 class UvConnectedGraph:
     def __init__(self):
@@ -14,20 +16,18 @@ class UvConnectedGraph:
         self.iscyclic = None
 
         self.uvverts = {}
-        self.count = None
-        self.root = None
-
-        self.degree = None
         self.uvedges = set()
+
+        self.root = None
+        self.count = None
+        self.degree = None
         self.length = None
-        self.center_median = None
-        self.center_average = None
-        self.bbox = None
 
         # for paths
         self.head = None
         self.tail = None
         self.sorted_uvverts = []
+        self.sorted_uvedges = []
 
     def set_singleton(self):
         self.issingleton = True
@@ -38,10 +38,6 @@ class UvConnectedGraph:
         self.iscyclic = False
         self.degree = 0
         self.length = 0
-        uv = self.uvverts.values()[0].uv
-        self.center_median = uv
-        self.center_average = uv
-        self.bbox = [uv, uv]
 
     def set_single_edge(self):
         self.issingleton = False
@@ -51,17 +47,7 @@ class UvConnectedGraph:
         self.ispartialmesh = False
         self.iscyclic = False
         self.degree = 1
-        uvv1, uvv2 = self.uvverts.values()
-        uvedge = UvEdge(uvv1, uvv2)
-        self.uvedges.add(uvedge)
-        self.length = uvedge.length
-        u1, v1 = uvv1.uv
-        u2, v2 = uvv2.uv
-        cu = (u1 + u2) / 2
-        cv = (v1 + v2) / 2
-        self.center_median = (cu, cv)
-        self.center_average = (cu, cv)
-        self.bbox = [[min(u1, u2), min(v1, v2)], max(u1, u2), max(v1, v2)]
+        self.length = next(iter(self.uvedges)).length
 
     def update(self):
         self.count = len(self.uvverts)
@@ -100,13 +86,16 @@ class UvConnectedGraph:
             self.sorted_uvverts = sorted(self.uvverts.values(), key=lambda uvv: uvv.depth)
             self.head = self.sorted_uvverts[0]
             self.tail = self.sorted_uvverts[self.count - 1]
+            edges_by_vertices = {frozenset((edge.uvv1, edge.uvv2)): edge for edge in self.uvedges}
+            self.sorted_uvedges = [
+                edges_by_vertices[frozenset((a, b))]
+                for a, b in zip(
+                    self.sorted_uvverts,
+                    self.sorted_uvverts[1:]
+                )
+            ]
         # values properties
         self.length = sum(uve.length for uve in self.uvedges)
-        self.bbox = [[inf, inf], [-inf, -inf]]
-        self.bbox[0][0] = min(uvv.uv[0] for uvv in self.uvverts.values())
-        self.bbox[0][1] = min(uvv.uv[1] for uvv in self.uvverts.values())
-        self.bbox[1][0] = max(uvv.uv[0] for uvv in self.uvverts.values())
-        self.bbox[1][1] = max(uvv.uv[1] for uvv in self.uvverts.values())
         cau = sum(uvv.uv[0] for uvv in self.uvverts.values()) / self.count
         cav = sum(uvv.uv[1] for uvv in self.uvverts.values()) / self.count
         self.center_average = (cau, cav)
@@ -114,16 +103,61 @@ class UvConnectedGraph:
         cmv = sorted(self.uvverts.values(), key=lambda uvv: uvv.uv[1])[self.count // 2]
         self.center_median = (cmu, cmv)
 
-    def get_center(self, mode):
-        if mode == "head-tail":
-            if self.ispath:
-                u = (self.head.uv[0] + self.tail.uv[0]) / 2
-                v = (self.head.uv[1] + self.tail.uv[1]) / 2
-                return (u, v)
-            else:
-                return False                
-        elif mode == "average":
-            count = self.count
-            u = sum([uvv.uv[0] for uvv in self.sorted_uvverts]) / count
-            v = sum([uvv.uv[1] for uvv in self.sorted_uvverts]) / count
-            return (u, v)
+
+
+    #=========#=========#=========#=========#=========#=========#=========#=========
+    # MODIFICATION
+    #=========#=========#=========#=========#=========#=========#=========#=========
+
+    def reverse_path(self):
+        if not self.ispath:
+            return False
+        self.sorted_uvverts.reverse()
+        for i, uvv in enumerate(self.sorted_uvverts):
+            uvv.depth = i
+        self.head, self.tail = self.tail, self.head
+        return True
+
+    def rotate(self, angle, center):
+        center = Vector(center)
+        m2 = Matrix.Rotation(angle, 2)
+        for uvv in self.uvverts.values():
+            old_pos = Vector(uvv.uv)
+            new_pos = center + m2 @ (old_pos - center)
+            uvv.set_uv(new_pos)
+
+
+    def straighten_path(self, keep_paths_length, even_point_distribution, center_mode):
+        htcenter = (self.head.uv + self.tail.uv) / 2
+        target_center = get_center(self, center_mode)
+        offset = target_center - htcenter
+        htdist = dist(self.head, self.tail)
+        start = Vector(self.head.uv)
+        end = Vector(self.tail.uv)
+        if keep_paths_length:
+            ratio = self.length / htdist
+            start = start + ratio * (start - htcenter)
+            end = end + ratio * (end - htcenter)
+        start += offset
+        end += offset
+        print(f"start {start}, end {end}")
+
+        # === length distribution example ===
+        # uvedge idx (3)         0      1        2
+        # path (1)           o-------o-----o------------o
+        # uvvert idx (4)     0       1     2            3
+        # distribution (4)   0       0.3   0.5          1.0  (normalized)
+        uvv_count = len(self.sorted_uvverts)
+        uve_count = uvv_count - 1
+        distribution = [0.0] * uvv_count # init only size
+        if even_point_distribution:
+            for i in range(uvv_count):
+                distribution[i] = i / (uvv_count - 1)
+        else:
+            acc = 0.0
+            for i in range(uve_count):
+                acc += self.sorted_uvedges[i].length
+                distribution[i + 1] = acc / self.length
+
+        for i, uvv in enumerate(self.sorted_uvverts):
+            uvv.set_uv(lerp(start, end, distribution[i]))

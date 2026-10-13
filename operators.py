@@ -11,35 +11,36 @@ from .UvGraph.UvGraph import UvGraph
 
 # HELPER
 
+def alert(message, title="Tohm UV Manip", icon='INFO'):
+    def draw(self, context):
+        for line in str(message).split("\n"):
+            self.layout.label(text=line)
+    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+
+
 def get_bmesh_stuff():
-    prefix = 'UvGraph issue: '
-    valid = True
-    obj = mesh = bm = uvmap = uvsync = None
-
-    obj = bpy.context.active_object # working on uvs, we want the active object
+    _FAIL = (None, None, None, None)
+    if bpy.context.tool_settings.use_uv_select_sync == True:
+        alert("Tohm UV Manip doesn't work in UV Sync Selection mode")
+        return _FAIL
+    obj = bpy.context.active_object
     if obj is None:
-        valid = False
-        print(f"{prefix}No active object")
-    if valid and obj.type != "MESH":
-        valid = False
-        print(f"{prefix}Active object is not a mesh: {obj.type}")
-    if valid and obj.mode != "EDIT":
-        valid = False
-        print(f"{prefix}Can only run in Edit Mode")
+        alert("No active object")
+        return _FAIL
+    if obj.type != "MESH":
+        alert(f"Active object is not a mesh: {obj.type}")
+        return _FAIL
 
-    if valid:
-        mesh = obj.data
-        bm = bmesh.from_edit_mesh(mesh)
-        uvmap = bm.loops.layers.uv.active
+    bpy.ops.object.mode_set(mode='EDIT')
 
-    if valid and uvmap is None:
-        valid = False
-        print(f"{prefix}Mesh has no UV map")
+    mesh = obj.data
+    bm = bmesh.from_edit_mesh(mesh)
+    uvmap = bm.loops.layers.uv.active
+    if not uvmap:
+        alert("Mesh has no UV map")
+        return _FAIL
 
-    if valid:
-        uvsync = bpy.context.scene.tool_settings.use_uv_select_sync
-
-    return [valid, obj, mesh, bm, uvmap, uvsync]
+    return obj, mesh, bm, uvmap
     
 
 # FUNCTIONS
@@ -47,9 +48,8 @@ def get_bmesh_stuff():
 # Selection
 
 def select_edges_by_angle(angle, tolerance, additive):
-    [valid, obj, mesh, bm, uvmap, uvsync] = get_bmesh_stuff()
-    if not valid: return
-    if sync: bm.uv_select_sync_from_mesh()
+    [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+    if not obj: return
     angle = (angle * math.pi / 180) % math.pi
     tolerance = (tolerance * math.pi / 180) % math.pi
     for f in bm.faces:
@@ -68,31 +68,30 @@ def select_edges_by_angle(angle, tolerance, additive):
                 l.uv_select_edge_set(True)
             elif not additive:
                 l.uv_select_edge_set(False)
-    if sync: bm.uv_select_sync_to_mesh()
     bmesh.update_edit_mesh(mesh)
 
 
 
 # Modification
 
-def straighten_paths(keeplength):
-    [valid, obj, mesh, bm, uvmap, uvsync] = get_bmesh_stuff()
-    if not valid: return
-    uvgraph = UvGraph(obj, mesh, bm, uvmap, uvsync)
-    uvgraph.straighten_paths(keeplength)
+def straighten_paths(keep_paths_length, even_point_distribution, center_mode):
+    [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+    if not obj: return
+    uvgraph = UvGraph(obj, mesh, bm, uvmap)
+    uvgraph.straighten_paths(keep_paths_length, even_point_distribution, center_mode)
     bmesh.update_edit_mesh(mesh)
 
 def reverse_paths():
-    [valid, obj, mesh, bm, uvmap, uvsync] = get_bmesh_stuff()
-    if not valid: return
-    uvgraph = UvGraph(obj, mesh, bm, uvmap, uvsync)
+    [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+    if not obj: return
+    uvgraph = UvGraph(obj, mesh, bm, uvmap)
     uvgraph.reverse_paths()
     bmesh.update_edit_mesh(mesh)
 
 def align_paths_on_grid():
-    [valid, obj, mesh, bm, uvmap, uvsync] = get_bmesh_stuff()
-    if not valid: return
-    uvgraph = UvGraph(obj, mesh, bm, uvmap, uvsync)
+    [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+    if not obj: return
+    uvgraph = UvGraph(obj, mesh, bm, uvmap)
     uvgraph.align_paths_on_grid()
     bmesh.update_edit_mesh(mesh)
 
@@ -100,9 +99,9 @@ def align_paths_on_grid():
 # Print
 
 def print_uvgraph(verbosity):
-    [valid, obj, mesh, bm, uvmap, uvsync] = get_bmesh_stuff()
-    if not valid: return
-    uvgraph = UvGraph(obj, mesh, bm, uvmap, uvsync)
+    [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+    if not obj: return
+    uvgraph = UvGraph(obj, mesh, bm, uvmap)
     uvgraph.print_self(verbosity)
 
 
@@ -113,7 +112,7 @@ def print_uvgraph(verbosity):
 
 class OBJECT_OT_PrintUvGraph(bpy.types.Operator):
     bl_idname = "tohm.uvgraph_print"
-    bl_label = "Print UV Graph"
+    bl_label = "Print UvGraph"
     bl_options = {'REGISTER', 'UNDO'}
 
     verbosity: bpy.props.IntProperty(name="verbosity", default=0)
@@ -135,13 +134,28 @@ class OBJECT_OT_StraightenPaths(bpy.types.Operator):
     bl_label = "Straighten Paths"
     bl_options = {'REGISTER', 'UNDO'}
 
-    keeplength:   bpy.props.BoolProperty(name="Keep Length", default=False)
+    keep_paths_length: bpy.props.BoolProperty(name="Keep Length", default=True)
+    even_point_distribution: bpy.props.BoolProperty(name="Even Points Distribution", default=False)
+    center_mode: bpy.props.EnumProperty(
+        name="Center",
+        items=[
+            ('BBOX', "Bounding Box", "Use the center of the path's bounding box"),
+            ('MEDIAN', "Median", "Use the median position of the path points"),
+            ('AVERAGE', "Average", "Use the average position of the path points"),
+            ('HEADTAIL', "Head-Tail Midpoint", "Use the midpoint between the head and tail of the path"),
+        ],
+        default='BBOX'
+    )
 
     def invoke(self, context, event):
         return self.execute(context)
 
     def execute(self, context):
-        straighten_paths(self.keeplength)
+        straighten_paths(
+            self.keep_paths_length,
+            self.even_point_distribution,
+            self.center_mode,
+        )
         return {'FINISHED'}
 
     def check(self, context):
@@ -169,7 +183,7 @@ class OBJECT_OT_AlignPathsOnGrid(bpy.types.Operator):
 
 class OBJECT_OT_SelectByAngle(bpy.types.Operator):
     bl_idname = "tohm.select_edges_by_angle"
-    bl_label = "Select By Angle"
+    bl_label = "Select Edges By Angle"
     bl_options = {'REGISTER', 'UNDO'}
 
     angle:     bpy.props.FloatProperty(name="Angle", default=0.0)

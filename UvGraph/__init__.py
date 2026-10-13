@@ -1,5 +1,7 @@
 import importlib
 
+from datetime import datetime
+print(datetime.now().strftime("%H:%M:%S"))
 
 if "UvVert" in locals():
     importlib.reload(UvVert)

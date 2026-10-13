@@ -1,13 +1,24 @@
+from mathutils import Vector
+
 class UvVert:
     def __init__(self, uvmap):
-        self.uv = None
-        self.loops = set()
-        self.neighbors = {}
+        self.uv = None      # Vector()
+        self.loops = set()  # set(BMLoop)
+        self.neighbors = {} # {tuple(u, v): UvVert()}
         self.index = -1
         self.depth = -1
         self.select = False
         self.uvmap = uvmap
-        self.isvisited = False # utility for each BFS
+        self.isvisited = False # utility, for each BFS
+
+    @property
+    def u(self): return self.uv[0]
+    @property
+    def v(self): return self.uv[1]
+    @property
+    def x(self): return self.uv[0]
+    @property
+    def y(self): return self.uv[1]
 
     @property
     def isleaf(self): return len(self.neighbors.values()) <= 1
@@ -22,7 +33,8 @@ class UvVert:
     def update_select(self):
         self.select = any(l.uv_select_vert for l in self.loops)
 
-    def set_uv(self, u, v):
-        self.uv = (u, v)
+    def set_uv(self, uv):
+        uv = Vector(uv)
+        self.uv = uv
         for l in self.loops:
-            l[self.uvmap].uv = (u, v)
+            l[self.uvmap].uv = uv
