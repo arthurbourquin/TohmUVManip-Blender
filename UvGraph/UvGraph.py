@@ -1,4 +1,4 @@
-import math
+from math import sqrt, atan2, sin, cos
 from mathutils import Vector
 
 from .UvVert import UvVert
@@ -6,12 +6,11 @@ from .UvConnectedGraph import UvConnectedGraph
 
 
 class UvGraph:
-    def __init__(self, obj, mesh, bm, uvmap, uvsync):
+    def __init__(self, obj, mesh, bm, uvmap):
         self.obj = obj
         self.mesh = mesh
         self.bm = bm
         self.uvmap = uvmap
-        self.uvsync = uvsync
 
         self.uvverts = {} # all uverts, selected or not
         self.graphs = []
@@ -104,41 +103,15 @@ class UvGraph:
             self.graphs.append(graph)
 
         for g in self.graphs:
-
             g.update()
 
-            if False:
-                max_degree = max((len(uvv.neighbors) for uvv in g.uvverts.values()), default=0)
-                total_half_edges = sum(len(uvv.neighbors) for uvv in g.uvverts.values())
-                edges = total_half_edges // 2
-                iscyclic = edges > g.count - 1
-                has_branch = max_degree > 2
-
-                g.issingleton = g.count == 1
-                g.ispath = not iscyclic and not has_branch and not g.issingleton
-                g.isring = iscyclic and not has_branch
-                g.istree = not iscyclic and has_branch
-                g.ispartialmesh = iscyclic and has_branch
-
-                if g.ispath:
-                    g.sorted_uvverts = sorted(g.uvverts.values(), key=lambda uvv: uvv.depth)
-                    g.head = g.sorted_uvverts[0]
-                    g.tail = g.sorted_uvverts[g.count - 1]
 
     # UTILITY
 
     def get_bounding_box(self, uvvs):
-        minu = minv = float('inf')
-        maxu = maxv = float('-inf')
-        for uvv in uvvs:
-            u = uvv.uv[0]
-            v = uvv.uv[1]
-            minu = min(minu, u)
-            maxu = max(maxu, u)
-            minv = min(minv, v)
-            maxv = max(maxv, v)
-        [width, height] = [maxu - minu, maxv - minv]
-        return [[minu, minv], [maxu, maxv], [width, height]]
+        us = [uvv[0] for uvv in uvvs]
+        vs = [uvv[1] for uvv in uvvs]
+        return [[min(us), min(vs)], [max(us), max(vs)]]
 
     def lerp(self, a, b, w):
         return a * (1 - w) + b * w
@@ -146,7 +119,7 @@ class UvGraph:
     def dist(self, uvv1, uvv2):
         du = uvv1.uv[0] - uvv2.uv[0]
         dv = uvv1.uv[1] - uvv2.uv[1]
-        return math.sqrt(du*du + dv*dv)
+        return sqrt(du*du + dv*dv)
 
     def reverse_path(self, path):
         if not path.ispath:
@@ -169,7 +142,7 @@ class UvGraph:
     # STRAIGHTENING
 
     def straighten_paths_headtail(self):
-        paths = [g for g in  self.graphs if g.ispath]
+        paths = [g for g in self.graphs if g.ispath]
         for p in paths:
             u1, v1 = p.head.uv
             u2, v2 = p.tail.uv
@@ -194,11 +167,49 @@ class UvGraph:
                 v = self.lerp(v1, v2, w)
                 uvv.set_uv(u, v)
 
-    def straighten_paths(self, keep_length=False):
-        if keep_length:
-            self.straighten_paths_headtail_keeplength()
-        else:
-            self.straighten_paths_headtail()
+    def straighten_paths(self, keep_paths_length, even_point_distribution, center_mode, orthogonalize):
+        paths = [g for g in self.graphs if g.ispath]
+        for p in paths:
+            htcenter = Vector(p.get_center("HEADTAIL"))
+            target_center = Vector(p.get_center(center_mode))
+            offset = target_center - htcenter
+            htdist = self.dist(p.head, p.tail)
+            start = Vector(p.head.uv)
+            end = Vector(p.tail.uv)
+            if keep_paths_length:
+                ratio = p.length / htdist
+                start = start + ratio * (start - htcenter)
+                end = end + ratio * (end - htcenter)
+            start += offset
+            end += offset
+
+            # === length distribution example ===
+            # uvedge idx (3)         0      1        2
+            # path (1)           o-------o-----o------------o
+            # uvvert idx (4)     0       1     2            3
+            # distribution (4)   0       0.3   0.5          1.0  (normalized)
+            uvv_count = len(p.sorted_uvverts)
+            uve_count = uvv_count - 1
+            distribution = [0.0] * uvv_count # init only size
+            if even_point_distribution:
+                for i in range(uvv_count):
+                    distribution[i] = i / (uvv_count - 1)
+            else:
+                acc = 0.0
+                for i in range(uve_count - 1): # skip first (allways 0.0)
+                    acc += p.sorted_uvedges[i].length
+                    distribution[i + 1] = acc
+                distribution = [d / p.length for d in distribution]
+
+            for uvv, i in enumerate(p.sorted_uvverts):
+                u = self.lerp(start.x, end.x, distribution[i])
+                v = self.lerp(start.y, end.y, distribution[i])
+                uvv.set_uv(u, v)
+
+
+
+
+
 
 
 
@@ -212,9 +223,10 @@ class UvGraph:
         for g in self.graphs:
             if g.ispath:
                 uvverts.extend(g.uvverts.values())
-        [[minu, minv], [maxu, maxv], [width, height]] = self.get_bounding_box(uvverts)
-
-        print(f'bbox: min u: {minu}, min v: {minv}, max u: {maxu}, max v: {maxv}, width: {width}, height: {height}')
+        [[mu, mv], [Mu, Mv]] = self.get_bounding_box(uvverts)
+        width = mu - Mu
+        height = mv - Mv
+        print(f'bbox: min u: {mu}, min v: {mv}, max u: {Mu}, max v: {Mv}, width: {width}, height: {height}')
         if width == 0 and height == 0: # can't align...
             return
 
@@ -238,9 +250,9 @@ class UvGraph:
 
         # sort paths by center coordinates
         if horizontal_paths_piled_vertically:
-            spaths = sorted(paths, key=lambda p: p.get_center("head-tail")[1])
+            spaths = sorted(paths, key=lambda p: p.get_center("HEADTAIL")[1])
         else:
-            spaths = sorted(paths, key=lambda p: p.get_center("head-tail")[0])
+            spaths = sorted(paths, key=lambda p: p.get_center("HEADTAIL")[0])
 
         # modifiy coordinates
         # - single path case

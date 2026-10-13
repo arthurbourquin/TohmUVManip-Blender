@@ -8,13 +8,13 @@ bl_info = {
     "category": "UV",
 }
 
-import bpy
 
+import bpy
 import importlib
+
 
 if "operators" in locals():
     importlib.reload(operators)
-
 if "ui" in locals():
     importlib.reload(ui)
 
@@ -37,8 +37,6 @@ classes = (
 def register():
     for c in classes:
         bpy.utils.register_class(c)
-
-
 def unregister():
     for c in classes:
         bpy.utils.unregister_class(c)

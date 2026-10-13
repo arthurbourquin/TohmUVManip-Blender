@@ -1,13 +1,13 @@
 class UvVert:
     def __init__(self, uvmap):
-        self.uv = None
-        self.loops = set()
-        self.neighbors = {}
+        self.uv = None # (flo,flo)
+        self.loops = set() # (BMLoop)
+        self.neighbors = {} # {UvVert}
         self.index = -1
         self.depth = -1
         self.select = False
         self.uvmap = uvmap
-        self.isvisited = False # utility for each BFS
+        self.isvisited = False # utility, for each BFS
 
     @property
     def isleaf(self): return len(self.neighbors.values()) <= 1
