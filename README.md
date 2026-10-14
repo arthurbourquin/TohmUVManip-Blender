@@ -16,7 +16,7 @@ This add-on relies mostly on an included graph class, `UvGraph`, which models th
 - **Coordinates**: several vertices/loops at the same location in the UV Editor are treated as a single point (`UvVert`).
 - **Connections**: operations work on the current selection, specifically on selected edges in the UV Editor forming a path.
 
-![texte alternatif](img/demo.gif)
+![demo](./img/demo.gif)
 
 
 ## Requirements
