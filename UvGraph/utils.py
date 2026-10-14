@@ -31,14 +31,14 @@ def get_center(cgrph, mode):
         return Vector(uv)
     elif mode == "MEDIAN":
         mid = len(uvvs) // 2
-        u = sorted([uvv[0] for uvv in uvvs])[mid]
-        v = sorted([uvv[1] for uvv in uvvs])[mid]
+        u = sorted([uvv.u for uvv in uvvs])[mid]
+        v = sorted([uvv.v for uvv in uvvs])[mid]
         uv = (u, v)
         return Vector(uv)
     elif mode == "AVERAGE":
         count = len(uvvs)
-        us = [uvv[0] for uvv in uvvs]
-        vs = [uvv[1] for uvv in uvvs]
+        us = [uvv.u for uvv in uvvs]
+        vs = [uvv.v for uvv in uvvs]
         uv = (sum(us) / count, sum(vs) / count)
         return Vector(uv)
     elif mode == "HEADTAIL":

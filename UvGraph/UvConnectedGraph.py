@@ -136,11 +136,10 @@ class UvConnectedGraph:
         end = Vector(self.tail.uv)
         if keep_paths_length:
             ratio = self.length / htdist
-            start = start + ratio * (start - htcenter)
-            end = end + ratio * (end - htcenter)
+            start = htcenter + ratio * (start - htcenter)
+            end = htcenter + ratio * (end - htcenter)
         start += offset
         end += offset
-        print(f"start {start}, end {end}")
 
         # === length distribution example ===
         # uvedge idx (3)         0      1        2

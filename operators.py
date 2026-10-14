@@ -45,9 +45,7 @@ def get_bmesh_stuff():
 
 # FUNCTIONS
 
-# Selection
-
-def select_edges_by_angle(angle, tolerance, additive):
+def select_edges_by_angle(angle, tolerance, additive): # buggy
     [obj, mesh, bm, uvmap] = get_bmesh_stuff()
     if not obj: return
     angle = (angle * math.pi / 180) % math.pi
@@ -66,13 +64,32 @@ def select_edges_by_angle(angle, tolerance, additive):
             select = diff < tolerance
             if select:
                 l.uv_select_edge_set(True)
+                l.uv_select_vert_set(True)
+                l.link_loop_next.uv_select_vert_set(True)
             elif not additive:
                 l.uv_select_edge_set(False)
     bmesh.update_edit_mesh(mesh)
 
 
 
-# Modification
+
+
+def print_uvgraph(verbosity):
+    [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+    if not obj: return
+    uvgraph = UvGraph(obj, mesh, bm, uvmap)
+    uvgraph.print_self(verbosity)
+
+
+
+
+# With UvGraph
+
+def scale_to_bounds():
+    [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+    if not obj: return
+    bmesh.update_edit_mesh(mesh)
+
 
 def straighten_paths(keep_paths_length, even_point_distribution, center_mode):
     [obj, mesh, bm, uvmap] = get_bmesh_stuff()
@@ -94,16 +111,6 @@ def align_paths_on_grid():
     uvgraph = UvGraph(obj, mesh, bm, uvmap)
     uvgraph.align_paths_on_grid()
     bmesh.update_edit_mesh(mesh)
-
-
-# Print
-
-def print_uvgraph(verbosity):
-    [obj, mesh, bm, uvmap] = get_bmesh_stuff()
-    if not obj: return
-    uvgraph = UvGraph(obj, mesh, bm, uvmap)
-    uvgraph.print_self(verbosity)
-
 
 
 #=========#=========#=========#=========#=========#=========#=========#=========
@@ -162,6 +169,7 @@ class OBJECT_OT_StraightenPaths(bpy.types.Operator):
         self.execute(context)
         return True
 
+
 class OBJECT_OT_ReversePaths(bpy.types.Operator):
     bl_idname = "tohm.reverse_paths"
     bl_label = "Reverse Paths"
@@ -180,6 +188,16 @@ class OBJECT_OT_AlignPathsOnGrid(bpy.types.Operator):
     def execute(self, context):
         align_paths_on_grid()
         return {'FINISHED'}
+
+class OBJECT_OT_ScaleToBounds(bpy.types.Operator):
+    bl_name = "togm.scale_to_bounds"
+    bl_label = "Scale To Bounds"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        scale_to_bounds()
+        return {'FINISHED'}
+
 
 class OBJECT_OT_SelectByAngle(bpy.types.Operator):
     bl_idname = "tohm.select_edges_by_angle"
