@@ -4,7 +4,7 @@ class UvVert:
     def __init__(self, uvmap):
         self.uv = None      # Vector()
         self.loops = set()  # set(BMLoop)
-        self.neighbors = {} # {tuple(u, v): UvVert()}
+        self.neighbors = {} # {tuple(u,v): UvVert()}
         self.index = -1
         self.depth = -1
         self.select = False

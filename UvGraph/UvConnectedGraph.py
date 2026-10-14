@@ -19,7 +19,6 @@ class UvConnectedGraph:
         self.uvedges = set()
 
         self.root = None
-        self.count = None
         self.degree = None
         self.length = None
 
@@ -39,25 +38,11 @@ class UvConnectedGraph:
         self.degree = 0
         self.length = 0
 
-    def set_single_edge(self):
-        self.issingleton = False
-        self.ispath = True
-        self.isring = False
-        self.istree = False
-        self.ispartialmesh = False
-        self.iscyclic = False
-        self.degree = 1
-        self.length = next(iter(self.uvedges)).length
-
     def update(self):
-        self.count = len(self.uvverts)
+        uvv_count = len(self.uvverts)
 
-        if self.count == 1:
+        if uvv_count == 1:
             self.set_singleton()
-            return
-
-        if self.count == 2:
-            self.set_single_edge()
             return
 
         # uv edges
@@ -65,7 +50,7 @@ class UvConnectedGraph:
         from collections import deque
         for uvv in self.uvverts.values():
             uvv.isvisited = False
-        if self.count >= 2:
+        if uvv_count >= 2:
             queue = deque([self.root])
             while queue:
                 uvv = queue.popleft()
@@ -76,16 +61,20 @@ class UvConnectedGraph:
                     self.uvedges.add(UvEdge(uvv, n))
                     if not n.isvisited:
                         queue.append(n)
+        self.length = sum(uve.length for uve in self.uvedges)
+
         # topology porperties
-        self.iscyclic = len(self.uvedges) > (self.count - 1)
+        self.iscyclic = len(self.uvedges) > (uvv_count - 1)
         self.istree = not self.iscyclic and self.degree >= 2
         self.ispath = not self.iscyclic and not self.istree and not self.issingleton
         self.isring = self.iscyclic and self.degree == 1
         self.ispartialmesh = self.iscyclic and self.degree > 1
+
+        # path
         if self.ispath:
             self.sorted_uvverts = sorted(self.uvverts.values(), key=lambda uvv: uvv.depth)
             self.head = self.sorted_uvverts[0]
-            self.tail = self.sorted_uvverts[self.count - 1]
+            self.tail = self.sorted_uvverts[uvv_count - 1]
             edges_by_vertices = {frozenset((edge.uvv1, edge.uvv2)): edge for edge in self.uvedges}
             self.sorted_uvedges = [
                 edges_by_vertices[frozenset((a, b))]
@@ -94,14 +83,6 @@ class UvConnectedGraph:
                     self.sorted_uvverts[1:]
                 )
             ]
-        # values properties
-        self.length = sum(uve.length for uve in self.uvedges)
-        cau = sum(uvv.uv[0] for uvv in self.uvverts.values()) / self.count
-        cav = sum(uvv.uv[1] for uvv in self.uvverts.values()) / self.count
-        self.center_average = (cau, cav)
-        cmu = sorted(self.uvverts.values(), key=lambda uvv: uvv.uv[0])[self.count // 2]
-        cmv = sorted(self.uvverts.values(), key=lambda uvv: uvv.uv[1])[self.count // 2]
-        self.center_median = (cmu, cmv)
 
 
 

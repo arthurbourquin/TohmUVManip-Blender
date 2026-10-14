@@ -1,6 +1,8 @@
 from math import sin, cos, atan2, pi
+from mathutils import Vector
 
 from .UvVert import UvVert
+from .UvEdge import UvEdge
 from .UvConnectedGraph import UvConnectedGraph
 from .utils import lerp, dist, get_angle, get_bounding_box, get_center
 
@@ -12,7 +14,8 @@ class UvGraph:
         self.bm = bm
         self.uvmap = uvmap
 
-        self.uvverts = {} # all uverts, selected or not
+        self.uvverts = {}    # all uverts, selected or not
+        self.uvedges = set() # all, selected or not
         self.graphs = []
         self.precision = 9
         self.epsilon = 10 ** -self.precision
@@ -23,6 +26,7 @@ class UvGraph:
 
     def init(self):
         self.init_uvverts()
+        self.init_uvedges()
         self.init_links()
         self.init_graphs()
 
@@ -34,6 +38,7 @@ class UvGraph:
     def create_key_from_loop(self, loop):
         uv = loop[self.uvmap].uv
         return self.create_key(uv)
+
 
     def init_uvverts(self):
         index = 0
@@ -49,6 +54,17 @@ class UvGraph:
                 self.uvverts[key].add_loop(l)
         for uvv in self.uvverts.values():
             uvv.update_select()
+
+    def init_uvedges(self):
+        for f in self.bm.faces:
+            for l in f.loops:
+                key1 = self.create_key_from_loop(l)
+                key2 = self.create_key_from_loop(l.link_loop_next)
+                # as we collected all uvverts, keys must exist
+                uvv1 = self.uvverts[key1]
+                uvv2 = self.uvverts[key2]
+                uve = UvEdge(uvv1, uvv2)
+                self.uvedges.add(uve)
 
     # link uvverts by edge selection, way better for path manipulation
     def init_links(self):
@@ -77,6 +93,7 @@ class UvGraph:
         to_visit = {uvv for uvv in self.uvverts.values() if uvv.select}
         for uvv in to_visit:
             uvv.depth = -1
+
         def walk(first, graph):
             stack = [(None, first, 0)]
             while stack:
@@ -107,6 +124,32 @@ class UvGraph:
 
         for g in self.graphs:
             g.update()
+
+
+    #=========#=========#=========#=========#=========#=========#=========#=========
+    # SELECTIONS
+    #=========#=========#=========#=========#=========#=========#=========#=========
+
+    def angle_match(self, a1, a2, tolerance):
+        a1 %= (2 * pi)
+        a2 %= (2 * pi)
+        diff = abs((a1 - a2 + pi) % (2 * pi) - pi)
+        return diff <= tolerance
+
+    def select_by_angle(self, target_angle, tolerance):
+        for f in self.bm:
+            for l in f.loops:
+                co1 = Vector(self.create_key_from_loop(l))
+                co2 = Vector(self.create_key_from_loop(l.link_loop_next))
+                vec_dir = co2 - co1
+                loop_angle = atan2(vec_dir.y, vec_dir.x)
+                match = self.angle_match(target_angle, loop_angle, tolerance)
+
+
+            
+
+
+
 
 
 
@@ -141,7 +184,7 @@ class UvGraph:
 
 
     def align_paths_on_grid(self):
-        print('align paths on grid')
+        print("align paths on grid")
         # get overall bounding box (befor straightening)
         uvvs = []
         for g in self.graphs:
@@ -151,7 +194,7 @@ class UvGraph:
         width = Mu - mu
         height = Mv - mv
 
-        print(f'bbox: min u: {mu}, min v: {mv}, max u: {Mu}, max v: {Mv}, width: {width}, height: {height}')
+        print(f"bbox: min u: {mu}, min v: {mv}, max u: {Mu}, max v: {Mv}, width: {width}, height: {height}")
         if width == 0 and height == 0: # can't align...
             return
 
@@ -182,17 +225,17 @@ class UvGraph:
         # modifiy coordinates
         # - single path case
         if len(spaths) == 1:
-            print('single path')
+            print("single path")
             p = spaths[0]
             if width > height:
-                countX = p.count
+                countX = len(p.uvverts)
                 v = (Mv + mv) / 2
                 for x, uvv in enumerate(p.sorted_uvverts):
                     wx = x / (countX - 1)
                     u = lerp(mu, Mu, wx)
                     uvv.set_uv([u, v])
             else:
-                countY = p.count
+                countY = len(p.uvverts)
                 u = (Mu + Mv) / 2
                 for y, uvv in enumerate(p.sorted_uvverts):
                     wy = y / (countY - 1)
@@ -200,11 +243,11 @@ class UvGraph:
                     uvv.set_uv([u, v])
         # - several paths case
         else:
-            print(f'path count: {len(spaths)}')
+            print(f"path count: {len(spaths)}")
             if horizontal_paths_piled_vertically:
                 countY = len(spaths)
                 for y, p in enumerate(spaths):
-                    countX = p.count
+                    countX = len(p.uvverts)
                     reverse = p.head.uv[0] > p.tail.uv[0]
                     for x, uvv in enumerate(p.sorted_uvverts):
                         wx = (x / (countX - 1))                     # no div 0, path has min 2 uvv
@@ -217,7 +260,7 @@ class UvGraph:
             else:
                 countX = len(spaths)
                 for x, p in enumerate(spaths):
-                    countY = p.count
+                    countY = len(p.uvverts)
                     reverse = p.head.uv[1] > p.tail.uv[1]
                     for y, uvv in enumerate(p.sorted_uvverts):
                         wx = x / (countX - 1)
@@ -236,7 +279,7 @@ class UvGraph:
         for g in self.graphs:
             if g.ispath:
                 for i, uvv in enumerate(g.sorted_uvverts):
-                    pos = i / (g.count - 1)
+                    pos = i / (len(g.uvverts) - 1)
                     uvv.set_uv([pos, 0])
 
 
@@ -244,57 +287,74 @@ class UvGraph:
     # PRINT
     #=========#=========#=========#=========#=========#=========#=========#=========
 
-    def print_self(self, verbosity):
-        print('=== UvGraph Diagnostic ===')
+    def print_self(self):
+        from datetime import datetime
+
         # helpers, decoration
+
+        print("")
+        print(f"=== UvGraph Diagnostic === {datetime.now().strftime("%H:%M:%S")}")
+        print(f"UvGraph: {self}")
+        print(f"total uvverts: {len(self.uvverts)}")
+        print(f"total uvedges: {len(self.uvedges)}")
+        print("")
+
+
+        print(f"| {len(self.graphs)} connected graphs:")
+        print("| idx | uvv | uve | degree | length | type       ")
+        print("|-----|-----|-----|--------|--------|-------- - -")
+        def print_graph(graph):
+            flag_values = [g.issingleton, g.ispath, g.isring, g.istree, g.ispartialmesh, g.iscyclic]
+            flag_labels = ["singleton ", "path ", "ring ", "tree ", "partial-mesh ", "cyclic "]
+            flags = "".join(flag_labels[i] if flag else "" for i,flag in enumerate(flag_values))
+            line  = f"| {g.index: >3} | {len(g.uvverts): >3} | {len(g.uvedges): >3} "
+            line += f"| {g.degree: >6} | {g.length: <6.4f} "
+            line += f"| {flags}"
+            print(line)
+        for g in sorted(self.graphs, key=lambda g: g.index):
+            print_graph(g)
+
+
         def print_uvv_header():
-            print("| uv  | depth | type      | idx-adj ")
-            print("|-----|-------|-----------|--------- - -")
+            print("| uv           | depth | type      | idx-adj     ")
+            print("|--------------|-------|-----------|--------- - -")
         def print_uvv(uvv):
             i = uvv.index
             d = uvv.depth
             adj = [uvv.index for uvv in uvv.neighbors.values()]
             flag_values = [uvv.isroot, uvv.isleaf]
-            flag_labels = ['root ', 'leaf ']
-            flags = ''.join(flag_labels[i] if flag else '.... ' for i,flag in enumerate(flag_values))
-            print(f"| {uvv.uv} | {d:>2}    | {flags}| {i:>2}-{adj}")
-        # core
-        if verbosity > 0:
-            print(f"UvGraph: {self}")
-
-        print(f"{len(self.graphs)} connected graphs")
-
+            flag_labels = ["root ", "leaf "]
+            flags = "".join(flag_labels[i] if flag else ".... " for i,flag in enumerate(flag_values))
+            print(f"| {uvv.u:>5.3f}, {uvv.v:>5.3f} | {d:>2}    | {flags}| {i:>2}-{adj}")
+        def get_graph_types_string(graph):
+            str = ""
+            if graph.issingleton: str += "singleton "
+            if graph.ispath: str += "path "
+            if graph.isring: str += "ring "
+            if graph.istree: str += "tree "
+            if graph.ispartialmesh: str += "mesh "
+            if graph.iscyclic: str += "cyclic "
+            return str
         for g in sorted(self.graphs, key=lambda g: g.index):
-            flag_values = [g.issingleton, g.ispath, g.isring, g.istree, g.ispartialmesh, g.iscyclic]
-            flag_labels = ['singleton ', 'path ', 'ring ', 'tree ', 'partial-mesh ', 'cyclic ']
-            flags = ''.join(flag_labels[i] if flag else '' for i,flag in enumerate(flag_values))
-            line = f'g {g.index: >4}, {g.count: >4} uvv, '
-            if verbosity > 0:
-                line += f'{len(g.uvedges)} uve, degree: {g.degree}, '
-            line += f'{flags}, length: {g.length: <6.4f}'
-            print(line)
-
-
-        if verbosity > 2:
-            for g in sorted(self.graphs, key=lambda g: g.index):
-                types = ""
-                if g.issingleton: types += "singleton "
-                if g.ispath: types += "path "
-                if g.isring: types += "ring "
-                if g.istree: types += "tree "
-                if g.ispartialmesh: types += "mesh "
-                if g.iscyclic: types += "cyclic "
-                print(f'\n| graph {g.index:>2} {types}')
-                print_uvv_header()
-                for uvv in sorted(g.uvverts.values(), key=lambda uvv: uvv.depth):
-                    print_uvv(uvv)
-            print('')
-
-        if verbosity > 1:
-            print(f'| unrelated')
+            types = get_graph_types_string(g)
+            print("")
+            print(f"| graph {g.index:>2} {types}")
             print_uvv_header()
-            for uvv in self.uvverts.values():
-                if not uvv.select:
-                    print_uvv(uvv)
+            for uvv in sorted(g.uvverts.values(), key=lambda uvv: uvv.depth):
+                print_uvv(uvv)
+            print("")
 
-        print('==========================')
+
+        print(f"| unrelated")
+        print_uvv_header()
+        i = 0
+        max = 10 # lines
+        for uvv in self.uvverts.values():
+            if i > max:
+                print("| ...")
+                break
+            if not uvv.select:
+                print_uvv(uvv)
+            i += 1
+
+        print("==========================")

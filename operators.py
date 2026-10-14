@@ -74,12 +74,11 @@ def select_edges_by_angle(angle, tolerance, additive): # buggy
 
 
 
-def print_uvgraph(verbosity):
+def print_uvgraph():
     [obj, mesh, bm, uvmap] = get_bmesh_stuff()
     if not obj: return
     uvgraph = UvGraph(obj, mesh, bm, uvmap)
-    uvgraph.print_self(verbosity)
-
+    uvgraph.print_self()
 
 
 
@@ -122,13 +121,8 @@ class OBJECT_OT_PrintUvGraph(bpy.types.Operator):
     bl_label = "Print UvGraph"
     bl_options = {'REGISTER', 'UNDO'}
 
-    verbosity: bpy.props.IntProperty(name="verbosity", default=0)
-
-    def invoke(self, context, event):
-        return self.execute(context)
-
     def execute(self, context):
-        print_uvgraph(self.verbosity)
+        print_uvgraph()
         return {'FINISHED'}
 
     def check(self, context):
