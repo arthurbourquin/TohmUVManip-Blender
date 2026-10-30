@@ -104,6 +104,15 @@ def reverse_paths():
     uvgraph.reverse_paths()
     bmesh.update_edit_mesh(mesh)
 
+
+def align_paths():
+    [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+    if not obj: return
+    uvgraph = UvGraph(obj, mesh, bm, uvmap)
+    uvgraph.align_paths()
+    bmesh.update_edit_mesh(mesh)
+
+
 def align_paths_on_grid():
     [obj, mesh, bm, uvmap] = get_bmesh_stuff()
     if not obj: return
@@ -172,6 +181,16 @@ class OBJECT_OT_ReversePaths(bpy.types.Operator):
     def execute(self, context):
         reverse_paths()
         return {'FINISHED'}
+
+
+class OBJECT_OT_AlignPaths(bpy.types.Operator):
+    bl_idname = "tohm.uvgraph_align_paths"
+    bl_label = "Align Paths"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        align_paths()
+        return {"FINISHED"}
 
 
 class OBJECT_OT_AlignPathsOnGrid(bpy.types.Operator):

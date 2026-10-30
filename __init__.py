@@ -29,6 +29,7 @@ classes = (
     operators.OBJECT_OT_PrintUvGraph,
     operators.OBJECT_OT_StraightenPaths,
     operators.OBJECT_OT_ReversePaths,
+    operators.OBJECT_OT_AlignPaths,
     operators.OBJECT_OT_AlignPathsOnGrid,
     operators.OBJECT_OT_SelectByAngle,
 )

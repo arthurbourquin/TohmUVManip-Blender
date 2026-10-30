@@ -180,7 +180,8 @@ class UvGraph:
         # Minimal rotation to mean
         for p, a in zip(paths, angles):
             delta = (mean - a + pi / 2) % pi - pi / 2
-            p.rotate(delta)
+            center = get_center(p, "HEADTAIL")
+            p.rotate(delta, center)
 
 
     def align_paths_on_grid(self):
