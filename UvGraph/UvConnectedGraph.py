@@ -1,5 +1,6 @@
 from mathutils import Vector, Matrix
 from .UvEdge import UvEdge
+from collections import deque
 
 from .utils import lerp, dist, get_angle, get_bounding_box, get_center
 
@@ -12,6 +13,7 @@ class UvConnectedGraph:
         self.ispath = None
         self.isring = None
         self.istree = None
+        self.isgrid = None
         self.ispartialmesh = None
         self.iscyclic = None
 
@@ -38,6 +40,10 @@ class UvConnectedGraph:
         self.degree = 0
         self.length = 0
 
+    def set_unvisited(self, uvvs):
+        for uvv in uvvs:
+            uvv.isvisited = False
+
     def update(self):
         uvv_count = len(self.uvverts)
 
@@ -47,7 +53,6 @@ class UvConnectedGraph:
 
         # uv edges
         self.degree = 1
-        from collections import deque
         for uvv in self.uvverts.values():
             uvv.isvisited = False
         if uvv_count >= 2:
@@ -83,6 +88,12 @@ class UvConnectedGraph:
                     self.sorted_uvverts[1:]
                 )
             ]
+
+        # check if is grid
+        if uvv_count >= 4:
+            self.set_unvisited(self.uvverts.values())
+            first = self.uvverts.values()[0]
+
 
 
 

@@ -7,6 +7,14 @@ from .UvConnectedGraph import UvConnectedGraph
 from .utils import lerp, dist, get_angle, get_bounding_box, get_center
 
 
+
+
+
+
+
+
+
+
 class UvGraph:
     def __init__(self, obj, mesh, bm, uvmap):
         self.obj = obj
@@ -126,6 +134,14 @@ class UvGraph:
             g.update()
 
 
+
+
+
+
+
+
+
+
     #=========#=========#=========#=========#=========#=========#=========#=========
     # SELECTIONS
     #=========#=========#=========#=========#=========#=========#=========#=========
@@ -147,6 +163,7 @@ class UvGraph:
 
 
             
+
 
 
 
@@ -272,6 +289,13 @@ class UvGraph:
 
 
 
+
+
+
+
+
+
+
     #=========#=========#=========#=========#=========#=========#=========#=========
     # TEST
     #=========#=========#=========#=========#=========#=========#=========#=========
@@ -284,26 +308,35 @@ class UvGraph:
                     uvv.set_uv([pos, 0])
 
 
+
+
+
+
+
+
+
+
     #=========#=========#=========#=========#=========#=========#=========#=========
     # PRINT
     #=========#=========#=========#=========#=========#=========#=========#=========
 
     def print_self(self):
+        lines = []
         from datetime import datetime
 
         # helpers, decoration
 
-        print("")
-        print(f"=== UvGraph Diagnostic === {datetime.now().strftime("%H:%M:%S")}")
-        print(f"UvGraph: {self}")
-        print(f"total uvverts: {len(self.uvverts)}")
-        print(f"total uvedges: {len(self.uvedges)}")
-        print("")
+        lines.append("")
+        lines.append(f"=== UvGraph Diagnostic === {datetime.now().strftime("%H:%M:%S")}")
+        lines.append(f"UvGraph: {self}")
+        lines.append(f"total uvverts: {len(self.uvverts)}")
+        lines.append(f"total uvedges: {len(self.uvedges)}")
+        lines.append("")
 
 
-        print(f"| {len(self.graphs)} connected graphs:")
-        print("| idx | uvv | uve | degree | length | type       ")
-        print("|-----|-----|-----|--------|--------|-------- - -")
+        lines.append(f"| {len(self.graphs)} connected graphs:")
+        lines.append("| idx | uvv | uve | degree | length | type       ")
+        lines.append("|-----|-----|-----|--------|--------|-------- - -")
         def print_graph(graph):
             flag_values = [g.issingleton, g.ispath, g.isring, g.istree, g.ispartialmesh, g.iscyclic]
             flag_labels = ["singleton ", "path ", "ring ", "tree ", "partial-mesh ", "cyclic "]
@@ -311,14 +344,14 @@ class UvGraph:
             line  = f"| {g.index: >3} | {len(g.uvverts): >3} | {len(g.uvedges): >3} "
             line += f"| {g.degree: >6} | {g.length: <6.4f} "
             line += f"| {flags}"
-            print(line)
+            lines.append(line)
         for g in sorted(self.graphs, key=lambda g: g.index):
             print_graph(g)
 
 
         def print_uvv_header():
-            print("| uv           | depth | type      | idx-adj     ")
-            print("|--------------|-------|-----------|--------- - -")
+            lines.append("| uv           | depth | type      | idx-adj     ")
+            lines.append("|--------------|-------|-----------|--------- - -")
         def print_uvv(uvv):
             i = uvv.index
             d = uvv.depth
@@ -326,7 +359,7 @@ class UvGraph:
             flag_values = [uvv.isroot, uvv.isleaf]
             flag_labels = ["root ", "leaf "]
             flags = "".join(flag_labels[i] if flag else ".... " for i,flag in enumerate(flag_values))
-            print(f"| {uvv.u:>5.3f}, {uvv.v:>5.3f} | {d:>2}    | {flags}| {i:>2}-{adj}")
+            lines.append(f"| {uvv.u:>5.3f}, {uvv.v:>5.3f} | {d:>2}    | {flags}| {i:>2}-{adj}")
         def get_graph_types_string(graph):
             str = ""
             if graph.issingleton: str += "singleton "
@@ -338,24 +371,26 @@ class UvGraph:
             return str
         for g in sorted(self.graphs, key=lambda g: g.index):
             types = get_graph_types_string(g)
-            print("")
-            print(f"| graph {g.index:>2} {types}")
+            lines.append("")
+            lines.append(f"| graph {g.index:>2} {types}")
             print_uvv_header()
             for uvv in sorted(g.uvverts.values(), key=lambda uvv: uvv.depth):
                 print_uvv(uvv)
-            print("")
+            lines.append("")
 
 
-        print(f"| unrelated")
+        lines.append(f"| unrelated")
         print_uvv_header()
         i = 0
         max = 10 # lines
         for uvv in self.uvverts.values():
             if i > max:
-                print("| ...")
+                lines.append("| ...")
                 break
             if not uvv.select:
                 print_uvv(uvv)
             i += 1
 
-        print("==========================")
+        lines.append("==========================")
+        print("\n".join(lines))
+        return lines
