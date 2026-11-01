@@ -10,7 +10,7 @@ from .UvGraph.UvGraph import UvGraph
 # UTILS
 #=========#=========#=========#=========#=========#=========#=========#=========
 
-def alert(message, title="Tohm UV Manip", icon='INFO'):
+def alert(message, icon='INFO'):
     if isinstance(message, (list, tuple)):
         lines = [str(m) for m in message]
     else:
@@ -18,13 +18,14 @@ def alert(message, title="Tohm UV Manip", icon='INFO'):
     def draw(self, context):
         for line in lines:
             self.layout.label(text=line)
-    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+    bpy.context.window_manager.popup_menu(draw, "Tohm UV Manip", icon=icon)
 
 
 def get_bmesh_stuff():
     _FAIL = (None, None, None, None)
     if bpy.context.tool_settings.use_uv_select_sync == True:
-        alert("Tohm UV Manip doesn't work in UV Sync Selection mode")
+        bpy.context.tool_settings.use_uv_select_sync == False
+        alert("UV Sync Selection turned off", )
         return _FAIL
     obj = bpy.context.active_object
     if obj is None:

@@ -1,3 +1,4 @@
+from math import atan2, pi
 from mathutils import Vector, Matrix
 from .UvEdge import UvEdge
 from collections import deque
@@ -53,8 +54,7 @@ class UvConnectedGraph:
 
         # uv edges
         self.degree = 1
-        for uvv in self.uvverts.values():
-            uvv.isvisited = False
+        self.set_unvisited(self.uvverts.values())
         if uvv_count >= 2:
             queue = deque([self.root])
             while queue:
@@ -89,10 +89,15 @@ class UvConnectedGraph:
                 )
             ]
 
-        # check if is grid
-        if uvv_count >= 4:
-            self.set_unvisited(self.uvverts.values())
-            first = self.uvverts.values()[0]
+        # check if is grid WIP...
+
+
+
+
+
+
+
+
 
 
 

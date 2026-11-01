@@ -33,22 +33,8 @@ class UvGraph:
     # INITIALISATION
 
     def init(self):
-        self.init_uvverts()
-        self.init_uvedges()
-        self.init_links()
-        self.init_graphs()
 
-    def create_key(self, uv):
-        ku = round(uv.x, self.precision)
-        kv = round(uv.y, self.precision)
-        return tuple((ku, kv))
-
-    def create_key_from_loop(self, loop):
-        uv = loop[self.uvmap].uv
-        return self.create_key(uv)
-
-
-    def init_uvverts(self):
+        # Get all uvverts
         index = 0
         for f in self.bm.faces:
             for l in f.loops:
@@ -63,7 +49,7 @@ class UvGraph:
         for uvv in self.uvverts.values():
             uvv.update_select()
 
-    def init_uvedges(self):
+        # Get all uvedges
         for f in self.bm.faces:
             for l in f.loops:
                 key1 = self.create_key_from_loop(l)
@@ -74,16 +60,15 @@ class UvGraph:
                 uve = UvEdge(uvv1, uvv2)
                 self.uvedges.add(uve)
 
-    # link uvverts by edge selection, way better for path manipulation
-    def init_links(self):
+        # Link uvverts by edge selection (better for path manipulation)
         for uvv in self.uvverts.values():
             for l in uvv.loops:
-                # BY EDGE SELECTION
-                # assert prev and next exists and are not the same (BMLoop)
-                # understand topology:
-                # [prev]  --(prev.edge)-->  [cur]  --(cur.edge)-->  [next]
-                # - prev.edge selected -> add prev
-                # - cur.edge selected  -> add next
+                # Assert prev loop and next loop exists and are not the same (BMLoop)
+                #    prev     cur     next
+                #     o--------o-------o
+                #        prev     cur
+                # Previous edge selected -> add prev
+                # Current edge selected  -> add next
                 keys = set()
                 if l.link_loop_prev.uv_select_edge:
                     keys.add(self.create_key_from_loop(l.link_loop_prev))                    
@@ -96,12 +81,10 @@ class UvGraph:
                 for key in keys:
                     if key not in uvv.neighbors and key != self.create_key(uvv.uv):
                         uvv.neighbors[key] = self.uvverts[key]
-
-    def init_graphs(self):
+        # initialize graphs
         to_visit = {uvv for uvv in self.uvverts.values() if uvv.select}
         for uvv in to_visit:
             uvv.depth = -1
-
         def walk(first, graph):
             stack = [(None, first, 0)]
             while stack:
@@ -115,7 +98,6 @@ class UvGraph:
                 nexts = [uvv for uvv in cur.neighbors.values() if uvv != prev]
                 for nxt in reversed(nexts):
                     stack.append((cur, nxt, depth + 1))
-
         index = 0
         while to_visit:
             graph = UvConnectedGraph()
@@ -129,9 +111,17 @@ class UvGraph:
             graph.root = first
             walk(first, graph)
             self.graphs.append(graph)
-
         for g in self.graphs:
             g.update()
+
+
+    def create_key(self, uv):
+        ku = round(uv.x, self.precision)
+        kv = round(uv.y, self.precision)
+        return tuple((ku, kv))
+
+    def create_key_from_loop(self, loop):
+        return self.create_key(loop[self.uvmap].uv)
 
 
 

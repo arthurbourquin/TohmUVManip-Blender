@@ -19,9 +19,7 @@ class UvEdge:
                 self.uvv1 = uvv_b
                 self.uvv2 = uvv_a
             else:
-                self.uvv1 = uvv_a
-                self.uvv2 = uvv_b
-                print('UvEdge made of identical UvVert!')
+                raise AssertionError("UvEdge made of identical UvVert")
 
     @property
     def vecdir(self):
@@ -35,13 +33,10 @@ class UvEdge:
         vec = self.vecdir
         return atan2(vec.y, vec.x)
 
-    def __eq__(self, other):
+    def __eq__(self, other): # for using uve1 == uve2
         if not isinstance(other, UvEdge):
             return NotImplemented
-        return (
-            self.uvv1 is other.uvv1
-            and self.uvv2 is other.uvv2
-        )
+        return self.uvv1 is other.uvv1 and self.uvv2 is other.uvv2
 
-    def __hash__(self):
+    def __hash__(self): # needed for set/dict usage
         return hash((self.uvv1, self.uvv2))
