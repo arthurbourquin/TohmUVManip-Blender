@@ -30,58 +30,50 @@ class UvGraph:
  
         self.init()
 
-    # INITIALISATION
-
     def init(self):
 
         # Get all uvverts
         index = 0
         for f in self.bm.faces:
             for l in f.loops:
-                key = self.create_key_from_loop(l)
-                if key not in self.uvverts:
-                    uvv = UvVert(self.uvmap)
-                    uvv.set_uv(key)
-                    uvv.index = index
+                uvkey = self.create_uvvkey_from_loop(l)
+                if uvkey not in self.uvverts:
+                    self.uvverts[uvkey] = UvVert(uvkey, self.uvmap, index)
                     index += 1
-                    self.uvverts[key] = uvv
-                self.uvverts[key].add_loop(l)
+                self.uvverts[uvkey].add_loop(l)
+        # Set select
         for uvv in self.uvverts.values():
-            uvv.update_select()
+            uvv.select = any(l.uv_select_vert for l in uvv.loops)
 
-        # Get all uvedges
+        # Get all uvedges & Set select
         for f in self.bm.faces:
             for l in f.loops:
-                key1 = self.create_key_from_loop(l)
-                key2 = self.create_key_from_loop(l.link_loop_next)
+                uvkey1 = self.create_uvvkey_from_loop(l)
+                uvkey2 = self.create_uvvkey_from_loop(l.link_loop_next)
                 # as we collected all uvverts, keys must exist
-                uvv1 = self.uvverts[key1]
-                uvv2 = self.uvverts[key2]
+                uvv1 = self.uvverts[uvkey1]
+                uvv2 = self.uvverts[uvkey2]
                 uve = UvEdge(uvv1, uvv2)
-                self.uvedges.add(uve)
+                if uve not in self.uvedges:
+                    self.uvedges.add(uve)
 
-        # Link uvverts by edge selection (better for path manipulation)
+        # Set selected neighbors for uvverts
+        # (Link uvverts by edge selection, better for path manipulation)
         for uvv in self.uvverts.values():
             for l in uvv.loops:
-                # Assert prev loop and next loop exists and are not the same (BMLoop)
-                #    prev     cur     next
-                #     o--------o-------o
-                #        prev     cur
-                # Previous edge selected -> add prev
-                # Current edge selected  -> add next
-                keys = set()
+                #  prev     cur     next
+                #   o--------o-------o-------
+                #      prev     cur
+                uvkeys = set()
                 if l.link_loop_prev.uv_select_edge:
-                    keys.add(self.create_key_from_loop(l.link_loop_prev))                    
+                    uvkeys.add(self.create_uvvkey_from_loop(l.link_loop_prev))
                 if l.uv_select_edge:
-                    keys.add(self.create_key_from_loop(l.link_loop_next))                    
-                # BY VERT SELECTION
-                if l.uv_select_vert == True:
-                    keys.add(self.create_key_from_loop(l))
-                # SET
-                for key in keys:
-                    if key not in uvv.neighbors and key != self.create_key(uvv.uv):
-                        uvv.neighbors[key] = self.uvverts[key]
-        # initialize graphs
+                    uvkeys.add(self.create_uvvkey_from_loop(l.link_loop_next))
+                for uvkey in uvkeys:
+                    if uvkey not in uvv.neighbors:
+                        uvv.neighbors[uvkey] = self.uvverts[uvkey]
+
+        # Initialize graphs
         to_visit = {uvv for uvv in self.uvverts.values() if uvv.select}
         for uvv in to_visit:
             uvv.depth = -1
@@ -92,8 +84,8 @@ class UvGraph:
                 if cur.depth != -1:
                     continue
                 cur.depth = depth
-                key = self.create_key(cur.uv)
-                graph.uvverts[key] = cur
+                uvkey = self.create_uvvkey(cur.uv)
+                graph.uvverts[uvkey] = cur
                 to_visit.discard(cur)
                 nexts = [uvv for uvv in cur.neighbors.values() if uvv != prev]
                 for nxt in reversed(nexts):
@@ -115,13 +107,13 @@ class UvGraph:
             g.update()
 
 
-    def create_key(self, uv):
+    def create_uvvkey(self, uv):
         ku = round(uv.x, self.precision)
         kv = round(uv.y, self.precision)
         return tuple((ku, kv))
 
-    def create_key_from_loop(self, loop):
-        return self.create_key(loop[self.uvmap].uv)
+    def create_uvvkey_from_loop(self, loop):
+        return self.create_uvvkey(loop[self.uvmap].uv)
 
 
 
@@ -145,8 +137,8 @@ class UvGraph:
     def select_by_angle(self, target_angle, tolerance):
         for f in self.bm:
             for l in f.loops:
-                co1 = Vector(self.create_key_from_loop(l))
-                co2 = Vector(self.create_key_from_loop(l.link_loop_next))
+                co1 = Vector(self.create_uvvkey_from_loop(l))
+                co2 = Vector(self.create_uvvkey_from_loop(l.link_loop_next))
                 vec_dir = co2 - co1
                 loop_angle = atan2(vec_dir.y, vec_dir.x)
                 match = self.angle_match(target_angle, loop_angle, tolerance)
@@ -241,14 +233,14 @@ class UvGraph:
                 for x, uvv in enumerate(p.sorted_uvverts):
                     wx = x / (countX - 1)
                     u = lerp(mu, Mu, wx)
-                    uvv.set_uv([u, v])
+                    uvv.translate_to([u, v])
             else:
                 countY = len(p.uvverts)
                 u = (Mu + Mv) / 2
                 for y, uvv in enumerate(p.sorted_uvverts):
                     wy = y / (countY - 1)
                     v = lerp(mv, Mv, wy)
-                    uvv.set_uv([u, v])
+                    uvv.translate_to([u, v])
         # - several paths case
         else:
             print(f"path count: {len(spaths)}")
@@ -264,7 +256,7 @@ class UvGraph:
                             wx = 1 - wx
                         u = lerp(mu, Mu, wx)
                         v = lerp(mv, Mv, wy)
-                        uvv.set_uv([u, v])
+                        uvv.translate_to([u, v])
             else:
                 countX = len(spaths)
                 for x, p in enumerate(spaths):
@@ -275,7 +267,7 @@ class UvGraph:
                         wy = (y / (countY - 1)) if not reverse else (1 - y / (countY - 1))
                         u = lerp(mu, Mu, wx)
                         v = lerp(mv, Mv, wy)
-                        uvv.set_uv([u, v])
+                        uvv.translate_to([u, v])
 
 
 
@@ -295,7 +287,7 @@ class UvGraph:
             if g.ispath:
                 for i, uvv in enumerate(g.sorted_uvverts):
                     pos = i / (len(g.uvverts) - 1)
-                    uvv.set_uv([pos, 0])
+                    uvv.translate_to([pos, 0])
 
 
 

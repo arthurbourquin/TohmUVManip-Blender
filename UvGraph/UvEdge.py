@@ -4,6 +4,7 @@ class UvEdge:
     def __init__(self, uvv_a, uvv_b):
         self.uvv1 = None # UvVert()
         self.uvv2 = None # UvVert()
+        self.select = False
 
         if uvv_a.u < uvv_b.u:
             self.uvv1 = uvv_a
@@ -19,7 +20,7 @@ class UvEdge:
                 self.uvv1 = uvv_b
                 self.uvv2 = uvv_a
             else:
-                raise AssertionError("UvEdge made of identical UvVert")
+                raise AssertionError("UvEdge made of UvVerts considered identicals")
 
     @property
     def vecdir(self):

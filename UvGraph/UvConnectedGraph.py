@@ -121,7 +121,7 @@ class UvConnectedGraph:
         for uvv in self.uvverts.values():
             old_pos = Vector(uvv.uv)
             new_pos = center + m2 @ (old_pos - center)
-            uvv.set_uv(new_pos)
+            uvv.translate_to(new_pos)
 
 
     def straighten_path(self, keep_paths_length, even_point_distribution, center_mode):
@@ -156,4 +156,4 @@ class UvConnectedGraph:
                 distribution[i + 1] = acc / self.length
 
         for i, uvv in enumerate(self.sorted_uvverts):
-            uvv.set_uv(lerp(start, end, distribution[i]))
+            uvv.translate_to(lerp(start, end, distribution[i]))

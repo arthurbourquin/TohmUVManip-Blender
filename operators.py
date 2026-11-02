@@ -10,15 +10,17 @@ from .UvGraph.UvGraph import UvGraph
 # UTILS
 #=========#=========#=========#=========#=========#=========#=========#=========
 
-def alert(message, icon='INFO'):
-    if isinstance(message, (list, tuple)):
-        lines = [str(m) for m in message]
+def alert(message, title="Tohm UV Manip", icon='INFO'):
+    if isinstance(message, list):
+        lines = [str(msg) for msg in message]
+    elif isinstance(message, str):
+        lines = message.split("\n")
     else:
-        lines = str(message).split("\n")
+        lines = [str(message)]
     def draw(self, context):
-        for line in lines:
-            self.layout.label(text=line)
-    bpy.context.window_manager.popup_menu(draw, "Tohm UV Manip", icon=icon)
+        for l in lines:
+            self.layout.label(text=l)
+    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
 
 
 def get_bmesh_stuff():
