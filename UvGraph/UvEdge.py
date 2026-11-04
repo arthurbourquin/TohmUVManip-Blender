@@ -1,10 +1,11 @@
 from math import sqrt, atan2
 
 class UvEdge:
-    def __init__(self, uvv_a, uvv_b):
+    def __init__(self, uvv_a, uvv_b, uvmap):
         self.uvv1 = None # UvVert()
         self.uvv2 = None # UvVert()
-        self.select = False
+        self.uvmap = uvmap
+        self.select = None
 
         if uvv_a.u < uvv_b.u:
             self.uvv1 = uvv_a
@@ -21,6 +22,27 @@ class UvEdge:
                 self.uvv2 = uvv_a
             else:
                 raise AssertionError("UvEdge made of UvVerts considered identicals")
+
+        # Taking loops
+        #      o----o       UvEdge (single)
+        #      o--> o-->    Clockwise loops (0 or more)
+        #   <--o <--o       Anticlockwise loops (0 or more)
+        l_candidates = set(self.uvv1.loops) | set(self.uvv2.loops)
+        loops = set()
+        for l in l_candidates:
+            if l.uv_select_edge == True:
+                co1 = l[self.uvmap].uv
+                co2 = l.link_loop_next[self.uvmap].uv
+                # access uvedges really need a dict... so WIP
+        for l in loops:
+            uvkeys = set()
+            if l.link_loop_prev.uv_select_edge:
+                uvkeys.add(self.create_uvvkey_from_loop(l.link_loop_prev))
+            if l.uv_select_edge:
+                uvkeys.add(self.create_uvvkey_from_loop(l.link_loop_next))
+            for uvkey in uvkeys:
+                if uvkey not in uvv.neighbors:
+                    uvv.neighbors[uvkey] = self.uvverts[uvkey]
 
     @property
     def vecdir(self):

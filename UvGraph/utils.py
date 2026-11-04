@@ -1,5 +1,21 @@
+import bpy
 from mathutils import Vector, Matrix
 from math import sin, cos, atan2, sqrt
+
+
+
+def alert(message, title="Tohm UV Manip", icon='INFO'):
+    if isinstance(message, list):
+        lines = [str(msg) for msg in message]
+    elif isinstance(message, str):
+        lines = message.split("\n")
+    else:
+        lines = [str(message)]
+    def draw(self, context):
+        for l in lines:
+            self.layout.label(text=l)
+    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+
 
 
 def lerp(a, b, w):

@@ -1,10 +1,10 @@
 from math import sin, cos, atan2, pi
 from mathutils import Vector
 
-from .UvVert import UvVert
+from .UvVert import UvVert, UvVerts
 from .UvEdge import UvEdge
 from .UvConnectedGraph import UvConnectedGraph
-from .utils import lerp, dist, get_angle, get_bounding_box, get_center
+from .utils import lerp, dist, get_angle, get_bounding_box, get_center, alert
 
 
 
@@ -17,43 +17,34 @@ from .utils import lerp, dist, get_angle, get_bounding_box, get_center
 
 class UvGraph:
     def __init__(self, obj, mesh, bm, uvmap):
-        self.obj = obj
-        self.mesh = mesh
-        self.bm = bm
+        self.obj   = obj
+        self.mesh  = mesh
+        self.bm    = bm
         self.uvmap = uvmap
 
-        self.uvverts = {}    # all uverts, selected or not
-        self.uvedges = set() # all, selected or not
+        self.uvverts = UvVerts(uvmap) # all uvverts, selected or not
+        self.uvedges = set() # all uvedges, selected or not
         self.graphs = []
-        self.precision = 9
+        self.precision = 6
         self.epsilon = 10 ** -self.precision
  
-        self.init()
-
-    def init(self):
-
         # Get all uvverts
-        index = 0
         for f in self.bm.faces:
             for l in f.loops:
-                uvkey = self.create_uvvkey_from_loop(l)
-                if uvkey not in self.uvverts:
-                    self.uvverts[uvkey] = UvVert(uvkey, self.uvmap, index)
-                    index += 1
-                self.uvverts[uvkey].add_loop(l)
-        # Set select
-        for uvv in self.uvverts.values():
-            uvv.select = any(l.uv_select_vert for l in uvv.loops)
+                uvkey = self.create_uvvert_key_from_loop(l)
+                self.uvverts.get_or_create(uvkey).add_loop(l)
+        for i, uvv in enumerate(self.uvverts.values()):
+            uvv.index = i
 
-        # Get all uvedges & Set select
+        # Get all uvedges
         for f in self.bm.faces:
             for l in f.loops:
-                uvkey1 = self.create_uvvkey_from_loop(l)
-                uvkey2 = self.create_uvvkey_from_loop(l.link_loop_next)
+                uvkey1 = self.create_uvvert_key_from_loop(l)
+                uvkey2 = self.create_uvvert_key_from_loop(l.link_loop_next)
                 # as we collected all uvverts, keys must exist
                 uvv1 = self.uvverts[uvkey1]
                 uvv2 = self.uvverts[uvkey2]
-                uve = UvEdge(uvv1, uvv2)
+                uve = UvEdge(uvv1, uvv2, self.uvmap)
                 if uve not in self.uvedges:
                     self.uvedges.add(uve)
 
@@ -61,14 +52,13 @@ class UvGraph:
         # (Link uvverts by edge selection, better for path manipulation)
         for uvv in self.uvverts.values():
             for l in uvv.loops:
-                #  prev     cur     next
-                #   o--------o-------o-------
-                #      prev     cur
+                #    prev    cur     next   (loops)
+                #  o------>o------>o------>
                 uvkeys = set()
                 if l.link_loop_prev.uv_select_edge:
-                    uvkeys.add(self.create_uvvkey_from_loop(l.link_loop_prev))
+                    uvkeys.add(self.create_uvvert_key_from_loop(l.link_loop_prev))
                 if l.uv_select_edge:
-                    uvkeys.add(self.create_uvvkey_from_loop(l.link_loop_next))
+                    uvkeys.add(self.create_uvvert_key_from_loop(l.link_loop_next))
                 for uvkey in uvkeys:
                     if uvkey not in uvv.neighbors:
                         uvv.neighbors[uvkey] = self.uvverts[uvkey]
@@ -84,7 +74,7 @@ class UvGraph:
                 if cur.depth != -1:
                     continue
                 cur.depth = depth
-                uvkey = self.create_uvvkey(cur.uv)
+                uvkey = self.create_uvvert_key(cur.uv)
                 graph.uvverts[uvkey] = cur
                 to_visit.discard(cur)
                 nexts = [uvv for uvv in cur.neighbors.values() if uvv != prev]
@@ -92,7 +82,7 @@ class UvGraph:
                     stack.append((cur, nxt, depth + 1))
         index = 0
         while to_visit:
-            graph = UvConnectedGraph()
+            graph = UvConnectedGraph(self.uvmap)
             graph.index = index
             index += 1
             leaves = sorted(
@@ -106,14 +96,13 @@ class UvGraph:
         for g in self.graphs:
             g.update()
 
-
-    def create_uvvkey(self, uv):
+    def create_uvvert_key(self, uv):
         ku = round(uv.x, self.precision)
         kv = round(uv.y, self.precision)
         return tuple((ku, kv))
 
-    def create_uvvkey_from_loop(self, loop):
-        return self.create_uvvkey(loop[self.uvmap].uv)
+    def create_uvvert_key_from_loop(self, loop):
+        return self.create_uvvert_key(loop[self.uvmap].uv)
 
 
 
@@ -137,8 +126,8 @@ class UvGraph:
     def select_by_angle(self, target_angle, tolerance):
         for f in self.bm:
             for l in f.loops:
-                co1 = Vector(self.create_uvvkey_from_loop(l))
-                co2 = Vector(self.create_uvvkey_from_loop(l.link_loop_next))
+                co1 = Vector(self.create_uvvert_key_from_loop(l))
+                co2 = Vector(self.create_uvvert_key_from_loop(l.link_loop_next))
                 vec_dir = co2 - co1
                 loop_angle = atan2(vec_dir.y, vec_dir.x)
                 match = self.angle_match(target_angle, loop_angle, tolerance)
@@ -184,29 +173,27 @@ class UvGraph:
 
 
     def align_paths_on_grid(self):
-        print("align paths on grid")
-        # get overall bounding box (befor straightening)
+        paths = [g for g in self.graphs if g.ispath]
+        if len(paths) <= 1:
+            alert(f"Need at least 2 paths, found {len(paths)}")
+            return
+
         uvvs = []
-        for g in self.graphs:
-            if g.ispath:
-                uvvs.extend(g.uvverts.values())
+        for p in paths:
+            uvvs.extend(p.uvverts.values())
+
         [[mu, mv], [Mu, Mv]] = get_bounding_box(uvvs)
         width = Mu - mu
         height = Mv - mv
-
-        print(f"bbox: min u: {mu}, min v: {mv}, max u: {Mu}, max v: {Mv}, width: {width}, height: {height}")
-        if width == 0 and height == 0: # can't align...
+        print(Mv, mv, height)
+        if width <= self.epsilon or height <= self.epsilon:
+            alert(f"Unable to guess grid layout, bbox is flat: width: {width}, height:{height}")
             return
 
-        # straighten all paths
         self.straighten_paths(False, True, "HEADTAIL")
 
-        # define layout (vertical or horzontal)
         vertical_count = 0
         horizontal_count = 0
-        paths = [g for g in self.graphs if g.ispath]
-        if not paths:
-            return
         for p in paths:
             u1, v1 = p.head.uv
             u2, v2 = p.tail.uv
@@ -216,58 +203,35 @@ class UvGraph:
                 vertical_count += 1
         horizontal_paths_piled_vertically = horizontal_count > vertical_count
 
-        # sort paths by center coordinates
         if horizontal_paths_piled_vertically:
             spaths = sorted(paths, key=lambda path: get_center(path, "HEADTAIL").y)
         else:
             spaths = sorted(paths, key=lambda path: get_center(path, "HEADTAIL").x)
 
-        # modifiy coordinates
-        # - single path case
-        if len(spaths) == 1:
-            print("single path")
-            p = spaths[0]
-            if width > height:
+        if horizontal_paths_piled_vertically:
+            countY = len(spaths)
+            for y, p in enumerate(spaths):
                 countX = len(p.uvverts)
-                v = (Mv + mv) / 2
+                reverse = p.head.uv[0] > p.tail.uv[0]
                 for x, uvv in enumerate(p.sorted_uvverts):
-                    wx = x / (countX - 1)
+                    wx = (x / (countX - 1)) # (no div 0: path has min 2 uvv)
+                    wy = 1 if countY == 1 else y / (countY - 1) # (no div 0: paths has min 2 path)
+                    if reverse:
+                        wx = 1 - wx
                     u = lerp(mu, Mu, wx)
-                    uvv.translate_to([u, v])
-            else:
-                countY = len(p.uvverts)
-                u = (Mu + Mv) / 2
-                for y, uvv in enumerate(p.sorted_uvverts):
-                    wy = y / (countY - 1)
                     v = lerp(mv, Mv, wy)
                     uvv.translate_to([u, v])
-        # - several paths case
         else:
-            print(f"path count: {len(spaths)}")
-            if horizontal_paths_piled_vertically:
-                countY = len(spaths)
-                for y, p in enumerate(spaths):
-                    countX = len(p.uvverts)
-                    reverse = p.head.uv[0] > p.tail.uv[0]
-                    for x, uvv in enumerate(p.sorted_uvverts):
-                        wx = (x / (countX - 1))                     # no div 0, path has min 2 uvv
-                        wy = 1 if countY == 1 else y / (countY - 1) # if div 0, single path
-                        if reverse:
-                            wx = 1 - wx
-                        u = lerp(mu, Mu, wx)
-                        v = lerp(mv, Mv, wy)
-                        uvv.translate_to([u, v])
-            else:
-                countX = len(spaths)
-                for x, p in enumerate(spaths):
-                    countY = len(p.uvverts)
-                    reverse = p.head.uv[1] > p.tail.uv[1]
-                    for y, uvv in enumerate(p.sorted_uvverts):
-                        wx = x / (countX - 1)
-                        wy = (y / (countY - 1)) if not reverse else (1 - y / (countY - 1))
-                        u = lerp(mu, Mu, wx)
-                        v = lerp(mv, Mv, wy)
-                        uvv.translate_to([u, v])
+            countX = len(spaths)
+            for x, p in enumerate(spaths):
+                countY = len(p.uvverts)
+                reverse = p.head.uv[1] > p.tail.uv[1]
+                for y, uvv in enumerate(p.sorted_uvverts):
+                    wx = x / (countX - 1)
+                    wy = (y / (countY - 1)) if not reverse else (1 - y / (countY - 1))
+                    u = lerp(mu, Mu, wx)
+                    v = lerp(mv, Mv, wy)
+                    uvv.translate_to([u, v])
 
 
 

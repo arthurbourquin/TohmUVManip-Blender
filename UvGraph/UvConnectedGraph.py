@@ -7,7 +7,8 @@ from .utils import lerp, dist, get_angle, get_bounding_box, get_center
 
 
 class UvConnectedGraph:
-    def __init__(self):
+    def __init__(self, uvmap):
+        self.uvmap = uvmap
         self.index = -1
 
         self.issingleton = None
@@ -52,6 +53,7 @@ class UvConnectedGraph:
             self.set_singleton()
             return
 
+        # visiting uvvs
         # uv edges
         self.degree = 1
         self.set_unvisited(self.uvverts.values())
@@ -63,7 +65,7 @@ class UvConnectedGraph:
                 neighbors = uvv.neighbors.values()
                 self.degree = max(self.degree, len(neighbors) - 1)
                 for n in neighbors:
-                    self.uvedges.add(UvEdge(uvv, n))
+                    self.uvedges.add(UvEdge(uvv, n, self.uvmap))
                     if not n.isvisited:
                         queue.append(n)
         self.length = sum(uve.length for uve in self.uvedges)

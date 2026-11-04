@@ -1,8 +1,38 @@
+from __future__ import annotations
+
 from mathutils import Vector
+
+
+# naming: UvVert(s), uvvert(s), uvv(s)
+
+
+class UvVerts:
+    def __init__(self, uvmap):
+        self.uvverts: dict[tuple[float, float], UvVert] = {}
+        self.uvmap = uvmap
+
+    # mimicing regular dict
+    def __getitem__(self, uv): return self.uvverts[tuple(uv)]
+    def __setitem__(self, uv, uvv): self.uvverts[tuple(uv)] = uvv
+    def __delitem__(self, uv): del self.uvverts[tuple(uv)]
+    def __contains__(self, uv): return uv in self.uvverts
+    from collections.abc import KeysView, ValuesView, ItemsView
+    def keys(self):   return self.uvverts.keys()
+    def values(self): return self.uvverts.values()
+    def items(self):  return self.uvverts.items()
+
+    # custom
+    def get_or_create(self, uv):
+        uv = tuple(uv)
+        if uv not in self.uvverts:
+            self.uvverts[uv] = UvVert(uv, self.uvmap)
+        return self.uvverts[uv]
+
+
 
 class UvVert:
     def __init__(self, uv, uvmap, index=-1, depth=-1, isvisited=False):
-        self.uv = Vector(uv)
+        self.uv = tuple(uv)
         self.uvmap = uvmap
         self.index = index
         self.depth = depth
@@ -15,33 +45,26 @@ class UvVert:
         self.update()
 
     @property
-    def u(self): return self.uv.x
+    def u(self): return self.uv[0]
     @property
-    def v(self): return self.uv.y
+    def v(self): return self.uv[1]
     @property
-    def x(self): return self.uv.x
+    def x(self): return self.uv[0]
     @property
-    def y(self): return self.uv.y
+    def y(self): return self.uv[1]
 
     @property
-    def isisolated(self): return len(self.neighbors.values()) == 0
+    def isisolated(self): return not self.neighbors
     @property
-    def isleaf(self): return len(self.neighbors.values()) <= 1
+    def isleaf(self): return len(self.neighbors) <= 1
     @property
     def isroot(self): return self.depth == 0 or self.depth == -1
 
     def update(self):
-        if self.depth == -1 and len(self.neighbors) == 0:
+        if len(self.neighbors) == 0:
             self.depth = 0
         self.select = any(l.uv_select_vert for l in self.loops)
 
-
     def add_loop(self, loop):
-        return self.loops.add(loop)
-        self.update()
-
-    def translate_to(self, uv):
-        self.uv = Vector(uv)
-        for l in self.loops:
-            l[self.uvmap].uv = self.uv
+        self.loops.add(loop)
         self.update()
