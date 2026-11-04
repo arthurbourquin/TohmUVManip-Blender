@@ -1,6 +1,7 @@
 from math import atan2, pi
 from mathutils import Vector, Matrix
 from .UvEdge import UvEdge
+from .UvVert import UvVert, UvVerts
 from collections import deque
 
 from .utils import lerp, dist, get_angle, get_bounding_box, get_center
@@ -19,7 +20,7 @@ class UvConnectedGraph:
         self.ispartialmesh = None
         self.iscyclic = None
 
-        self.uvverts = {}
+        self.uvverts = UvVerts(uvmap)
         self.uvedges = set()
 
         self.root = None
@@ -46,7 +47,13 @@ class UvConnectedGraph:
         for uvv in uvvs:
             uvv.isvisited = False
 
-    def update(self):
+    def update_keys(self):
+        new_uvverts = UvVerts(self.uvmap)
+        for uvv in self.uvverts.values():
+            new_uvverts[uvv.uv] = uvv
+        self.uvverts = new_uvverts
+
+    def init(self):
         uvv_count = len(self.uvverts)
 
         if uvv_count == 1:
@@ -123,22 +130,22 @@ class UvConnectedGraph:
         for uvv in self.uvverts.values():
             old_pos = Vector(uvv.uv)
             new_pos = center + m2 @ (old_pos - center)
-            uvv.translate_to(new_pos)
-
+            uvv.move(new_pos)
+        self.update_keys()
 
     def straighten_path(self, keep_paths_length, even_point_distribution, center_mode):
-        htcenter = (self.head.uv + self.tail.uv) / 2
+        uv_head = Vector(self.head.uv)
+        uv_tail = Vector(self.tail.uv)
+        htcenter = (uv_head + uv_tail) / 2
         target_center = get_center(self, center_mode)
         offset = target_center - htcenter
         htdist = dist(self.head, self.tail)
-        start = Vector(self.head.uv)
-        end = Vector(self.tail.uv)
         if keep_paths_length:
             ratio = self.length / htdist
-            start = htcenter + ratio * (start - htcenter)
-            end = htcenter + ratio * (end - htcenter)
-        start += offset
-        end += offset
+            uv_head = htcenter + ratio * (uv_head - htcenter)
+            uv_tail = htcenter + ratio * (uv_tail - htcenter)
+        uv_head += offset
+        uv_tail += offset
 
         # === length distribution example ===
         # uvedge idx (3)         0      1        2
@@ -158,4 +165,6 @@ class UvConnectedGraph:
                 distribution[i + 1] = acc / self.length
 
         for i, uvv in enumerate(self.sorted_uvverts):
-            uvv.translate_to(lerp(start, end, distribution[i]))
+            uvv.move(lerp(uv_head, uv_tail, distribution[i]))
+
+        self.update_keys()

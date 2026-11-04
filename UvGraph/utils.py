@@ -49,19 +49,19 @@ def get_center(cgrph, mode):
         mid = len(uvvs) // 2
         u = sorted([uvv.u for uvv in uvvs])[mid]
         v = sorted([uvv.v for uvv in uvvs])[mid]
-        uv = (u, v)
-        return Vector(uv)
+        return Vector((u, v))
     elif mode == "AVERAGE":
+        sum_u = sum([uvv.u for uvv in uvvs])
+        sum_v = sum([uvv.v for uvv in uvvs])
         count = len(uvvs)
-        us = [uvv.u for uvv in uvvs]
-        vs = [uvv.v for uvv in uvvs]
-        uv = (sum(us) / count, sum(vs) / count)
-        return Vector(uv)
+        return Vector((sum_u, sum_v)) / count
     elif mode == "HEADTAIL":
         if not cgrph.ispath:
             print("Can't get head-tail midpoint: UvConnectedGraph is not a path.")
             return None
-        return (cgrph.head.uv + cgrph.tail.uv) / 2
+        uv1 = Vector(cgrph.head.uv)
+        uv2 = Vector(cgrph.tail.uv)
+        return (uv1 + uv2) / 2
     else:
         print(f"Unknown center mode: {mode}")
         return None

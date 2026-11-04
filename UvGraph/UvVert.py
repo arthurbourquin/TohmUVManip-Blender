@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from mathutils import Vector
 
-
 # naming: UvVert(s), uvvert(s), uvv(s)
 
 
@@ -20,6 +19,7 @@ class UvVerts:
     def keys(self):   return self.uvverts.keys()
     def values(self): return self.uvverts.values()
     def items(self):  return self.uvverts.items()
+    def __len__(self): return len(self.uvverts)
 
     # custom
     def get_or_create(self, uv):
@@ -40,7 +40,7 @@ class UvVert:
 
         self.select = False
         self.loops = set()  # set(BMLoop)
-        self.neighbors = {} # {tuple(u,v): UvVert()}
+        self.neighbors = UvVerts(uvmap)
 
         self.update()
 
@@ -68,3 +68,9 @@ class UvVert:
     def add_loop(self, loop):
         self.loops.add(loop)
         self.update()
+
+    def move(self, uv):
+        uv = tuple(uv)
+        self.uv = uv
+        for l in self.loops:
+            l[self.uvmap].uv = uv

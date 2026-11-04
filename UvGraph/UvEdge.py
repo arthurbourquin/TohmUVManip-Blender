@@ -1,4 +1,43 @@
 from math import sqrt, atan2
+from __future__ import annotations
+
+from mathutils import Vector
+
+
+
+class UvEdges:
+    def __init__(self, uvmap):
+        #                             (u1     v1)          (u2     v2)      uvedge
+        self.uvedges: dict[tuple[tuple[float, float], tuple[float, float]], UvEdge] = {}
+        self.uvmap = uvmap
+
+    # mimicing regular dict
+    def __getitem__(self, pair):
+        if pair in self.uvedges:
+            return self.uvedges[pair] # 1. pair exist
+        else:
+            uvv1, uvv2 = pair
+            return self.uvedges[(uvv2, uvv1)] # 2. flip exist 3. neither pair nor flip exists
+
+    def __setitem__(self, pair, uve):
+        a = 1
+
+    def __delitem__(self, pair):
+        a = 1
+
+    def __contains__(self, pair):
+        a = 1
+
+    from collections.abc import KeysView, ValuesView, ItemsView
+    def keys(self):   return self.uvedges.keys()
+    def values(self): return self.uvedges.values()
+    def items(self):  return self.uvedges.items()
+    def __len__(self): return len(self.uvedges)
+
+    # custom
+    def get_or_create(self, pair):
+        a = 1
+
 
 class UvEdge:
     def __init__(self, uvv_a, uvv_b, uvmap):
@@ -34,19 +73,10 @@ class UvEdge:
                 co1 = l[self.uvmap].uv
                 co2 = l.link_loop_next[self.uvmap].uv
                 # access uvedges really need a dict... so WIP
-        for l in loops:
-            uvkeys = set()
-            if l.link_loop_prev.uv_select_edge:
-                uvkeys.add(self.create_uvvkey_from_loop(l.link_loop_prev))
-            if l.uv_select_edge:
-                uvkeys.add(self.create_uvvkey_from_loop(l.link_loop_next))
-            for uvkey in uvkeys:
-                if uvkey not in uvv.neighbors:
-                    uvv.neighbors[uvkey] = self.uvverts[uvkey]
 
     @property
     def vecdir(self):
-        return self.uvv2.uv - self.uvv1.uv
+        return Vector(self.uvv2.uv) - Vector(self.uvv1.uv)
     @property
     def length(self):
         vec = self.vecdir

@@ -94,11 +94,11 @@ class UvGraph:
             walk(first, graph)
             self.graphs.append(graph)
         for g in self.graphs:
-            g.update()
+            g.init()
 
     def create_uvvert_key(self, uv):
-        ku = round(uv.x, self.precision)
-        kv = round(uv.y, self.precision)
+        ku = round(uv[0], self.precision)
+        kv = round(uv[1], self.precision)
         return tuple((ku, kv))
 
     def create_uvvert_key_from_loop(self, loop):
@@ -106,34 +106,6 @@ class UvGraph:
 
 
 
-
-
-
-
-
-
-
-    #=========#=========#=========#=========#=========#=========#=========#=========
-    # SELECTIONS
-    #=========#=========#=========#=========#=========#=========#=========#=========
-
-    def angle_match(self, a1, a2, tolerance):
-        a1 %= (2 * pi)
-        a2 %= (2 * pi)
-        diff = abs((a1 - a2 + pi) % (2 * pi) - pi)
-        return diff <= tolerance
-
-    def select_by_angle(self, target_angle, tolerance):
-        for f in self.bm:
-            for l in f.loops:
-                co1 = Vector(self.create_uvvert_key_from_loop(l))
-                co2 = Vector(self.create_uvvert_key_from_loop(l.link_loop_next))
-                vec_dir = co2 - co1
-                loop_angle = atan2(vec_dir.y, vec_dir.x)
-                match = self.angle_match(target_angle, loop_angle, tolerance)
-
-
-            
 
 
 
@@ -220,7 +192,8 @@ class UvGraph:
                         wx = 1 - wx
                     u = lerp(mu, Mu, wx)
                     v = lerp(mv, Mv, wy)
-                    uvv.translate_to([u, v])
+                    uvv.move((u, v))
+                p.update_keys()
         else:
             countX = len(spaths)
             for x, p in enumerate(spaths):
@@ -231,27 +204,8 @@ class UvGraph:
                     wy = (y / (countY - 1)) if not reverse else (1 - y / (countY - 1))
                     u = lerp(mu, Mu, wx)
                     v = lerp(mv, Mv, wy)
-                    uvv.translate_to([u, v])
-
-
-
-
-
-
-
-
-
-
-    #=========#=========#=========#=========#=========#=========#=========#=========
-    # TEST
-    #=========#=========#=========#=========#=========#=========#=========#=========
-
-    def put_path_en_bas(self):
-        for g in self.graphs:
-            if g.ispath:
-                for i, uvv in enumerate(g.sorted_uvverts):
-                    pos = i / (len(g.uvverts) - 1)
-                    uvv.translate_to([pos, 0])
+                    uvv.move((u, v))
+                p.update_keys()
 
 
 
