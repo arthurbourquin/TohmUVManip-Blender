@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from mathutils import Vector
 
-# naming: UvVert(s), uvvert(s), uvv(s)
-
+from .UvEdge import UvEdge, UvEdges
 
 class UvVerts:
     def __init__(self, uvmap):
         self.uvverts: dict[tuple[float, float], UvVert] = {}
         self.uvmap = uvmap
 
-    # mimicing regular dict
+    # mimicking regular dict
     def __getitem__(self, uv): return self.uvverts[tuple(uv)]
     def __setitem__(self, uv, uvv): self.uvverts[tuple(uv)] = uvv
     def __delitem__(self, uv): del self.uvverts[tuple(uv)]
@@ -21,7 +20,12 @@ class UvVerts:
     def items(self):  return self.uvverts.items()
     def __len__(self): return len(self.uvverts)
 
-    # custom
+    # cutsom
+    def add(self, uvv):
+        uvvkey = uvv.uv
+        if not uvvkey in self.uvverts:
+            self.uvverts[uvvkey] = uvv
+
     def get_or_create(self, uv):
         uv = tuple(uv)
         if uv not in self.uvverts:
@@ -41,8 +45,9 @@ class UvVert:
         self.select = False
         self.loops = set()  # set(BMLoop)
         self.neighbors = UvVerts(uvmap)
+        self.uvedges = UvEdges(uvmap)
 
-        self.update()
+        self.update_select()
 
     @property
     def u(self): return self.uv[0]
@@ -60,14 +65,16 @@ class UvVert:
     @property
     def isroot(self): return self.depth == 0 or self.depth == -1
 
-    def update(self):
-        if len(self.neighbors) == 0:
-            self.depth = 0
-        self.select = any(l.uv_select_vert for l in self.loops)
+    def update_select(self):
+        for l in self.loops:
+            case_a = l.uv_select_vert
+            case_b = l.uv_select_edge
+            case_c = l.link_loop_prev.uv_select_edge
+            self.select = any([case_a, case_b, case_c])
 
     def add_loop(self, loop):
         self.loops.add(loop)
-        self.update()
+        self.update_select()
 
     def move(self, uv):
         uv = tuple(uv)

@@ -1,8 +1,9 @@
+import bmesh
 from math import sin, cos, atan2, pi
 from mathutils import Vector
 
 from .UvVert import UvVert, UvVerts
-from .UvEdge import UvEdge
+from .UvEdge import UvEdge, UvEdges
 from .UvConnectedGraph import UvConnectedGraph
 from .utils import lerp, dist, get_angle, get_bounding_box, get_center, alert
 
@@ -22,46 +23,54 @@ class UvGraph:
         self.bm    = bm
         self.uvmap = uvmap
 
-        self.uvverts = UvVerts(uvmap) # all uvverts, selected or not
-        self.uvedges = set() # all uvedges, selected or not
+        self.uvverts = UvVerts(uvmap)
+        self.uvedges = UvEdges(uvmap)
         self.graphs = []
         self.precision = 6
         self.epsilon = 10 ** -self.precision
- 
+
+        # GET
         # Get all uvverts
         for f in self.bm.faces:
             for l in f.loops:
                 uvkey = self.create_uvvert_key_from_loop(l)
-                self.uvverts.get_or_create(uvkey).add_loop(l)
-        for i, uvv in enumerate(self.uvverts.values()):
-            uvv.index = i
-
+                uvv = self.uvverts.get_or_create(uvkey) # may already exist
+                uvv.add_loop(l)
+        # keep only selected
+        for uvv in list(self.uvverts.values()):
+            if not uvv.select:
+                uvvkey = uvv.uv
+                del self.uvverts[uvvkey]
         # Get all uvedges
-        for f in self.bm.faces:
+        for f in bm.faces:
             for l in f.loops:
                 uvkey1 = self.create_uvvert_key_from_loop(l)
                 uvkey2 = self.create_uvvert_key_from_loop(l.link_loop_next)
-                # as we collected all uvverts, keys must exist
                 uvv1 = self.uvverts[uvkey1]
                 uvv2 = self.uvverts[uvkey2]
-                uve = UvEdge(uvv1, uvv2, self.uvmap)
-                if uve not in self.uvedges:
-                    self.uvedges.add(uve)
+                self.uvedges.get_or_create((uvv1, uvv2))
+        # keep only selected
+        for uve in list(self.uvedges.values()):
+            if not uve.select:
+                uvekey = (uve.uvv1, uve.uvv2)
+                del self.uvedges[uvekey]
 
-        # Set selected neighbors for uvverts
-        # (Link uvverts by edge selection, better for path manipulation)
+        # LINK
+        # uvverts linked uvedges
+        for uve in self.uvedges.values():
+            uve.uvv1.uvedges.add(uve)
+            uve.uvv2.uvedges.add(uve)
+        # uvverts linked uvverts (neighbors)
+        for uve in self.uvedges.values():
+            uve.uvv1.neighbors.add(uve.uvv2)
+            uve.uvv2.neighbors.add(uve.uvv1)
+        # uvedges linked uvedges (neighbors)
         for uvv in self.uvverts.values():
-            for l in uvv.loops:
-                #    prev    cur     next   (loops)
-                #  o------>o------>o------>
-                uvkeys = set()
-                if l.link_loop_prev.uv_select_edge:
-                    uvkeys.add(self.create_uvvert_key_from_loop(l.link_loop_prev))
-                if l.uv_select_edge:
-                    uvkeys.add(self.create_uvvert_key_from_loop(l.link_loop_next))
-                for uvkey in uvkeys:
-                    if uvkey not in uvv.neighbors:
-                        uvv.neighbors[uvkey] = self.uvverts[uvkey]
+            for uve_i in uvv.uvedges.values():
+                for uve_j in uvv.uvedges.values():
+                    if uve_i != uve_j:
+                        uve_i.neighbors.add(uve_j)
+
 
         # Initialize graphs
         to_visit = {uvv for uvv in self.uvverts.values() if uvv.select}

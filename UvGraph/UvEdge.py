@@ -1,33 +1,34 @@
-from math import sqrt, atan2
 from __future__ import annotations
-
+from math import sqrt, atan2
 from mathutils import Vector
 
+from .UvVert import UvVert
+
+def order_pair(uvv_pair):
+    uvva, uvvb = uvv_pair
+    au, av = uvva.uv
+    bu, bv = uvvb.uv
+    if au == bu and av == bv:
+        raise AssertionError("Identical uvvert pair coordinates")
+        return
+    if au != bu:
+        if   au < bu: return (uvva, uvvb)
+        elif au > bu: return (uvvb, uvva)
+    else:
+        if   av < bv: return (uvva, uvvb)
+        elif av > bv: return (uvvb, uvva)
 
 
 class UvEdges:
     def __init__(self, uvmap):
-        #                             (u1     v1)          (u2     v2)      uvedge
-        self.uvedges: dict[tuple[tuple[float, float], tuple[float, float]], UvEdge] = {}
+        self.uvedges: dict[tuple[UvVert, UvVert], UvEdge] = {}
         self.uvmap = uvmap
 
-    # mimicing regular dict
-    def __getitem__(self, pair):
-        if pair in self.uvedges:
-            return self.uvedges[pair] # 1. pair exist
-        else:
-            uvv1, uvv2 = pair
-            return self.uvedges[(uvv2, uvv1)] # 2. flip exist 3. neither pair nor flip exists
-
-    def __setitem__(self, pair, uve):
-        a = 1
-
-    def __delitem__(self, pair):
-        a = 1
-
-    def __contains__(self, pair):
-        a = 1
-
+    # mimicking regular dict
+    def __getitem__(self, uvv_pair): return self.uvedges[order_pair(uvv_pair)]
+    def __setitem__(self, uvv_pair, uve): self.uvedges[order_pair(uvv_pair)] = uve
+    def __delitem__(self, uvv_pair): del self.uvedges[order_pair(uvv_pair)]
+    def __contains__(self, uvv_pair): return order_pair(uvv_pair) in self.uvedges
     from collections.abc import KeysView, ValuesView, ItemsView
     def keys(self):   return self.uvedges.keys()
     def values(self): return self.uvedges.values()
@@ -35,44 +36,32 @@ class UvEdges:
     def __len__(self): return len(self.uvedges)
 
     # custom
-    def get_or_create(self, pair):
-        a = 1
+    def add(self, uve):
+        uvekey = (uve.uvv1, uve.uvv2)
+        if not uvekey in self.uvedges:
+            self.uvedges[uvekey] = uve
+
+    def get_or_create(self, uvv_pair):
+        uvv_pair = order_pair(uvv_pair)
+        if uvv_pair in self.uvedges:
+            return self.uvedges[uvv_pair]
+        else:
+            uvv1, uvv2 = uvv_pair
+            self.uvedges[uvv_pair] = UvEdge(uvv1, uvv2, self.uvmap)
+            return self.uvedges[uvv_pair]
+
 
 
 class UvEdge:
     def __init__(self, uvv_a, uvv_b, uvmap):
-        self.uvv1 = None # UvVert()
-        self.uvv2 = None # UvVert()
+        self.uvv1, self.uvv2 = order_pair((uvv_a, uvv_b))
         self.uvmap = uvmap
         self.select = None
 
-        if uvv_a.u < uvv_b.u:
-            self.uvv1 = uvv_a
-            self.uvv2 = uvv_b
-        elif uvv_a.u > uvv_b.u:
-            self.uvv1 = uvv_b
-            self.uvv2 = uvv_a
-        else:
-            if uvv_a.v < uvv_b.v:
-                self.uvv1 = uvv_a
-                self.uvv2 = uvv_b
-            elif uvv_a.v > uvv_b.v:
-                self.uvv1 = uvv_b
-                self.uvv2 = uvv_a
-            else:
-                raise AssertionError("UvEdge made of UvVerts considered identicals")
+        self.update_select()
 
-        # Taking loops
-        #      o----o       UvEdge (single)
-        #      o--> o-->    Clockwise loops (0 or more)
-        #   <--o <--o       Anticlockwise loops (0 or more)
-        l_candidates = set(self.uvv1.loops) | set(self.uvv2.loops)
-        loops = set()
-        for l in l_candidates:
-            if l.uv_select_edge == True:
-                co1 = l[self.uvmap].uv
-                co2 = l.link_loop_next[self.uvmap].uv
-                # access uvedges really need a dict... so WIP
+    @property
+    def key(self): return (self.uvv1, self.uvv2)
 
     @property
     def vecdir(self):
@@ -92,4 +81,17 @@ class UvEdge:
         return self.uvv1 is other.uvv1 and self.uvv2 is other.uvv2
 
     def __hash__(self): # needed for set/dict usage
-        return hash((self.uvv1, self.uvv2))
+        return hash(self.key)
+
+
+    def update_select(self):
+        self.select = False
+        for l in self.uvv1.loops:
+            if l.uv_select_edge and l.link_loop_next[self.uvmap].uv == self.uvv2.uv:
+                self.select = True
+                break
+        if not self.select:
+            for l in self.uvv2.loops:
+                if l.uv_select_edge and l.link_loop_next[self.uvmap].uv == self.uvv1.uv:
+                    self.select = True
+                    break
