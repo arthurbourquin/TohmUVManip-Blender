@@ -1,6 +1,10 @@
+# python
+from math import atan2, sqrt
+
+# Blender
 import bpy
 from mathutils import Vector, Matrix
-from math import sin, cos, atan2, sqrt
+
 
 
 

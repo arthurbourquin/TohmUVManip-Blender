@@ -27,7 +27,7 @@ def get_bmesh_stuff():
     _FAIL = (None, None, None, None)
     if bpy.context.tool_settings.use_uv_select_sync == True:
         bpy.context.tool_settings.use_uv_select_sync == False
-        alert("UV Sync Selection turned off", )
+        alert("Tohm UV Manip doesn't support UV Sync Select mode.\nTurn it off to work with the addon.", )
         return _FAIL
     obj = bpy.context.active_object
     if obj is None:
@@ -68,7 +68,7 @@ class OBJECT_OT_PrintUvGraph(bpy.types.Operator):
 
     def execute(self, context):
         [obj, mesh, bm, uvmap] = get_bmesh_stuff()
-        if not obj: return
+        if not obj: return {'CANCELLED'}
         uvgraph = UvGraph(obj, mesh, bm, uvmap)
         message = uvgraph.print_self()
         alert(message)
@@ -103,7 +103,7 @@ class OBJECT_OT_StraightenPaths(bpy.types.Operator):
 
     def execute(self, context):
         [obj, mesh, bm, uvmap] = get_bmesh_stuff()
-        if not obj: return
+        if not obj: return {'CANCELLED'}
         uvgraph = UvGraph(obj, mesh, bm, uvmap)
         uvgraph.straighten_paths(
             self.keep_paths_length,
@@ -126,7 +126,7 @@ class OBJECT_OT_ReversePaths(bpy.types.Operator):
 
     def execute(self, context):
         [obj, mesh, bm, uvmap] = get_bmesh_stuff()
-        if not obj: return
+        if not obj: return {'CANCELLED'}
         uvgraph = UvGraph(obj, mesh, bm, uvmap)
         uvgraph.reverse_paths()
         bmesh.update_edit_mesh(mesh)
@@ -141,7 +141,7 @@ class OBJECT_OT_AlignPaths(bpy.types.Operator):
 
     def execute(self, context):
         [obj, mesh, bm, uvmap] = get_bmesh_stuff()
-        if not obj: return
+        if not obj: return {'CANCELLED'}
         uvgraph = UvGraph(obj, mesh, bm, uvmap)
         uvgraph.align_paths()
         bmesh.update_edit_mesh(mesh)
@@ -156,7 +156,7 @@ class OBJECT_OT_AlignPathsOnGrid(bpy.types.Operator):
 
     def execute(self, context):
         [obj, mesh, bm, uvmap] = get_bmesh_stuff()
-        if not obj: return
+        if not obj: return {'CANCELLED'}
         uvgraph = UvGraph(obj, mesh, bm, uvmap)
         uvgraph.align_paths_on_grid()
         bmesh.update_edit_mesh(mesh)
@@ -178,7 +178,7 @@ class OBJECT_OT_SelectByAngle(bpy.types.Operator):
 
     def execute(self, context):
         [obj, mesh, bm, uvmap] = get_bmesh_stuff()
-        if not obj: return
+        if not obj: return {'CANCELLED'}
         angle = (self.angle * math.pi / 180) % math.pi
         tolerance = (self.tolerance * math.pi / 180) % math.pi
         if not self.additive:

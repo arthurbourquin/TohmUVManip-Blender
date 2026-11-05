@@ -13,11 +13,11 @@ if "UvGraph" in locals():
     importlib.reload(UvGraph)
 
 
-from . import UvVert
+from . import UvVertUvEdge
 from . import UvConnectedGraph
 from . import UvGraph
 
 
-from .UvVert import UvVert
+from .UvVertUvEdge import UvVert, UvVerts, UvEdge, UvEdges
 from .UvConnectedGraph import UvConnectedGraph
 from .UvGraph import UvGraph

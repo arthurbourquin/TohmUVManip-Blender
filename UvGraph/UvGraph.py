@@ -1,9 +1,12 @@
-import bmesh
+# python
 from math import sin, cos, atan2, pi
+
+# Blender
+import bmesh
 from mathutils import Vector
 
-from .UvVert import UvVert, UvVerts
-from .UvEdge import UvEdge, UvEdges
+# Tohm UV Manip
+from .UvVertUvEdge import UvVert, UvVerts, UvEdge, UvEdges
 from .UvConnectedGraph import UvConnectedGraph
 from .utils import lerp, dist, get_angle, get_bounding_box, get_center, alert
 
@@ -36,11 +39,6 @@ class UvGraph:
                 uvkey = self.create_uvvert_key_from_loop(l)
                 uvv = self.uvverts.get_or_create(uvkey) # may already exist
                 uvv.add_loop(l)
-        # keep only selected
-        for uvv in list(self.uvverts.values()):
-            if not uvv.select:
-                uvvkey = uvv.uv
-                del self.uvverts[uvvkey]
         # Get all uvedges
         for f in bm.faces:
             for l in f.loops:
@@ -50,6 +48,10 @@ class UvGraph:
                 uvv2 = self.uvverts[uvkey2]
                 self.uvedges.get_or_create((uvv1, uvv2))
         # keep only selected
+        for uvv in list(self.uvverts.values()):
+            if not uvv.select:
+                uvvkey = uvv.uv
+                del self.uvverts[uvvkey]
         for uve in list(self.uvedges.values()):
             if not uve.select:
                 uvekey = (uve.uvv1, uve.uvv2)
@@ -72,7 +74,41 @@ class UvGraph:
                         uve_i.neighbors.add(uve_j)
 
 
-        # Initialize graphs
+        # CREATE CONNECTED GRAPHS
+
+        # reset uvvs
+        for uvv in self.uvverts.values():
+            uvv.isvisited = False
+
+        # singletons
+        singletons = [uvv for uvv in self.uvverts.values() if len(uvv.neighbors) == 0]
+        for uvv in singletons:
+            uvv.depth = 0
+            uvv.isvisited = True
+            cgrapg = UvConnectedGraph(self.uvmap)
+            cgrapg.uvverts.add(uvv)
+            self.graphs.append(cgrapg)
+
+        # with root
+        leaves = set([uvv for uvv in self.uvverts.values() if len(uvv.neighbors) == 1])
+        while leaves:
+            cgrapg = UvConnectedGraph(self.uvmap)
+            root = next(iter(leaves))
+            stack = [(root, 0)]
+            while stack:
+                cur, depth = stack.pop()
+                cur.depth = depth
+                cur.isvisited = True
+                leaves.discard(cur)
+                for next in cur.neighbors.values():
+                    if not next.isvisited:
+                        stack.append([next, depth + 1])
+
+
+        # without root
+        rootless = [uvv for uvv in self.uvverts.values() if not uvv.isvisited]
+
+
         to_visit = {uvv for uvv in self.uvverts.values() if uvv.select}
         for uvv in to_visit:
             uvv.depth = -1

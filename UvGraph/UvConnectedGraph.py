@@ -1,10 +1,14 @@
+# python
 from math import atan2, pi
-from mathutils import Vector, Matrix
-from .UvEdge import UvEdge
-from .UvVert import UvVert, UvVerts
 from collections import deque
 
-from .utils import lerp, dist, get_angle, get_bounding_box, get_center
+# Blender
+from mathutils import Vector, Matrix
+
+# Tohm UV Manip
+from .UvVertUvEdge import UvVert, UvVerts, UvEdge, UvEdges
+from .utils import lerp, dist, get_center
+
 
 
 class UvConnectedGraph:
@@ -12,20 +16,14 @@ class UvConnectedGraph:
         self.uvmap = uvmap
         self.index = -1
 
-        self.issingleton = None
-        self.ispath = None
-        self.isring = None
-        self.istree = None
         self.isgrid = None
         self.ispartialmesh = None
         self.iscyclic = None
 
         self.uvverts = UvVerts(uvmap)
-        self.uvedges = set()
+        self.uvedges = UvEdges(uvmap)
 
         self.root = None
-        self.degree = None
-        self.length = None
 
         # for paths
         self.head = None
@@ -33,15 +31,22 @@ class UvConnectedGraph:
         self.sorted_uvverts = []
         self.sorted_uvedges = []
 
-    def set_singleton(self):
-        self.issingleton = True
-        self.ispath = False
-        self.isring = False
-        self.istree = False
-        self.ispartialmesh = False
-        self.iscyclic = False
-        self.degree = 0
-        self.length = 0
+    @property
+    def degree(self): return max([len(uvv.neighbors) for uvv in self.uvverts.values()], default=0)
+    @property
+    def length(self): return sum([uve.length for uve in self.uvedges.values()])
+
+    @property
+    def issingleton(self): return len(self.uvverts) == 1
+    @property
+    def istree(self):
+        return len(self.uvverts) == len(self.uvedges) + 1
+    @property
+    def ispath(self):
+        return len(self.uvverts) >= 2 and self.istree and self.degree <= 2
+    @property
+    def isring(self):
+        return len(self.uvverts) >= 3 and all(len(v.neighbors) == 2 for v in self.uvverts.values())
 
     def set_unvisited(self, uvvs):
         for uvv in uvvs:
