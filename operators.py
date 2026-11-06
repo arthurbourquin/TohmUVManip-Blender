@@ -19,7 +19,7 @@ from . import utils
 
 
 #=========#=========#=========#=========#=========#=========#=========#=========
-# OPERATORS
+# MARK: - Independant
 #=========#=========#=========#=========#=========#=========#=========#=========
 
 class OBJECT_OT_SelectByAngle(bpy.types.Operator):
@@ -76,7 +76,7 @@ class OBJECT_OT_SelectByAngle(bpy.types.Operator):
 
 
 #=========#=========#=========#=========#=========#=========#=========#=========
-# OPERATORS USING UVGRAPH
+# MARK: - UvGraph
 #=========#=========#=========#=========#=========#=========#=========#=========
 
 class OBJECT_OT_PrintUvGraph(bpy.types.Operator):
@@ -180,3 +180,18 @@ class OBJECT_OT_AlignPathsOnGrid(bpy.types.Operator):
         UvGraph.align_paths_on_grid(uvmesh)
         bmesh.update_edit_mesh(mesh)
         return {'FINISHED'}
+
+
+
+class OBJECT_OT_AlignGrids(bpy.types.Operator):
+    bl_idname = "tohm.uvgraph_align_grids"
+    bl_label = "Align Grid"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        [obj, mesh, bm, uvmap] = utils.get_bmesh_stuff()
+        if not obj: return {'CANCELLED'}
+        uvmesh = UvGraph.UvMesh(obj, mesh, bm, uvmap)
+        UvGraph.align_grids(uvmesh)
+        bmesh.update_edit_mesh(mesh)
+        return {"FINISHED"}

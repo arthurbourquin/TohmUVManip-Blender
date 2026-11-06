@@ -26,12 +26,16 @@ from . import ui
 classes = (
     ui.VIEW3D_PT_UvGraph_Pannel,
 
-    operators.OBJECT_OT_PrintUvGraph,
+    operators.OBJECT_OT_SelectByAngle,
+
     operators.OBJECT_OT_StraightenPaths,
     operators.OBJECT_OT_ReversePaths,
     operators.OBJECT_OT_AlignPaths,
     operators.OBJECT_OT_AlignPathsOnGrid,
-    operators.OBJECT_OT_SelectByAngle,
+
+    operators.OBJECT_OT_AlignGrids,
+
+    operators.OBJECT_OT_PrintUvGraph,
 )
 
 

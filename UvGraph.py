@@ -1,5 +1,6 @@
 # python
 from math import sqrt, sin, cos, atan2, pi
+from collections import deque
 
 # Blender
 import bmesh
@@ -30,8 +31,12 @@ class UVVert:
     def __init__(self, uvmap):
         self.uvmap = uvmap
         self.select = None
-        self.depth = -1
+        self.depth = -1 # for bfs and paths indexing
         self.isvisited = False
+
+        # for grid
+        self.i = None
+        self.j = None
 
         self.loops_list = []
         self.uvverts_set = set()
@@ -79,11 +84,12 @@ class UVIsland:
         self.uvedges_set = set(uvedges)
         self.root = None
 
-        # for paths
-        self.sorted_uvverts = None
-        self.sorted_uvedges = None
-        self.head = None
-        self.tail = None
+        self.sorted_uvverts = None # paths grid
+        self.sorted_uvedges = None # paths
+        self.head = None # path
+        self.tail = None # path
+        self.gridx = None # grid
+        self.gridy = None # grid
 
         for uve in self.uvedges_set:
             self.uvverts_set.add(uve.uvv1)
@@ -108,13 +114,21 @@ class UVIsland:
                 assert uve is not None, "No uvedge found in island"
                 self.sorted_uvedges.append(uve)
 
-        if self.isgrid:
-            # mesh       dA         dB         s          i          j
-            # A . . N    0 1 2 3    2 3 4 5    0 2 4 6    0 1 2 3    0 0 0 0
-            # . . . .    1 2 3 4    1 2 3 4    0 2 4 6    0 1 2 3    1 1 1 1
-            # M . . O    2 3 4 5    0 1 2 3    0 2 4 6    0 1 2 3    2 2 2 2
-            # m=3, n=4
-            a = 1
+        # if isgrid
+        grid_res = self.grid_size()
+        if grid_res is not None:
+            # mesh       dA         dY         sum        y          x
+            # A . . X    0 1 2 3    2 3 4 5    2 4 6 8    0 0 0 0    0 1 2 3
+            # . . . .    1 2 3 4    1 2 3 4    2 4 6 8    1 1 1 1    0 1 2 3
+            # Y . . B    2 3 4 5    0 1 2 3    2 4 6 8    2 2 2 2    0 1 2 3
+            self.gridx, self.gridy, A, X, B, Y = grid_res
+            dA = grid_bfs_dist(A)
+            dY = grid_bfs_dist(Y)
+            for uvv in self.uvverts_set:
+                sum = dA[uvv] + dY[uvv]
+                uvv.x = (sum - (self.gridy - 1)) // 2
+                uvv.y = dA[uvv] - uvv.x
+            self.sorted_uvverts = sorted(self.uvverts_set, key=lambda uvv: (uvv.x, uvv.y))
 
     @property
     def degree(self): return max([len(uvv.uvverts_set) for uvv in self.uvverts_set], default=0)
@@ -137,37 +151,56 @@ class UVIsland:
         is_tree = len(self.uvverts_set) == len(self.uvedges_set) + 1
         is_not_path = self.degree > 2
         return is_tree and is_not_path
-
     @property
     def isgrid(self):
-        corners = [uvv for uvv in self.uvverts_set if len(uvv.uvverts_set) == 2]
-        if len(corners) != 4:
-            return False
-        borders = [uvv for uvv in self.uvverts_set if len(uvv.uvverts_set) == 3]
-        interns = [uvv for uvv in self.uvverts_set if len(uvv.uvverts_set) == 4]
-        if len(corners) + len(borders) + len(interns) != len(self.uvverts_set):
-            return False
-        if len(borders) % 4 != 0:
-            return False
-        
-        
+        return self.grid_size() is not None
 
-    def who_am_i(self):
-        str = ""
-        if self.ispath:
-            str += "Path, "
-        elif self.isring:
-            str += "Ring, "
-        elif self.istree:
-            str += "Tree, "
+    def grid_size(self):
+        uvvs = self.uvverts_set
+        V, E = len(uvvs), len(self.uvedges_set)
+
+        border = {v for v in uvvs if len(v.uvverts_set) in (2, 3)}
+        corners = [v for v in border if len(v.uvverts_set) == 2]
+        interns = [v for v in uvvs if len(v.uvverts_set) == 4]
+        if len(corners) != 4 or len(border) + len(interns) != V:
+            return None
+
+        v1, v2, v3, v4 = [Vector(uvv.uv) for uvv in corners]
+        center = (v1 + v2 + v3 + v4) / 4
+        visually_sorted_corners = sorted(corners, key=lambda uvv: -angle(center, uvv.uv))
+
+        A = visually_sorted_corners[0]
+        walk = [A]
+        cur = A
+        while True:
+            nexts = [uvv for uvv in cur.uvverts_set if uvv in border and uvv not in walk]
+            if not nexts:
+                break
+            if len(nexts) > 1 and cur is not A:
+                return None
+            cur = nexts[0]
+            walk.append(cur)
+
+        if len(walk) != len(border) or A not in cur.uvverts_set:
+            return None
+
+        ordered_corners = [(uvv, idx) for idx, uvv in enumerate(walk) if len(uvv.uvverts_set) == 2]
+        (A, a), (X, x), (B, b), (Y, y) = ordered_corners
+        m = x - a + 1
+        n = b - x + 1
+        m_ = y - b + 1
+        n_ = len(walk) - y + 1
+        if m != m_ or n != n_:
+            return None
+        if m * n != V or E != m * (n - 1) + n * (m - 1):
+            return None
+        if len(interns) != (m - 2) * (n - 2):
+            return None
+        flip = ordered_corners[1] == visually_sorted_corners[1]
+        if flip:
+            return m, n, A, X, B, Y
         else:
-            str += f"Cyclic island, "
-        str += f"{len(self.uvverts_set)} uvverts, "
-        str += f"{len(self.uvedges_set)} uvedges, "
-        str += f"length {self.length:.2f}, "
-        str += f"degree {self.degree}"
-        return str
-
+            return n, m, A, Y, B, X
 
 
 # MARK: - UvMesh
@@ -331,9 +364,18 @@ def order_pair(uvva, uvvb):
 def lerp(a, b, w):
     return a * (1 - w) + b * w
 
-def uvvs_angle(uvv1, uvv2): # [-pi,pi]
-    du, dv = Vector(uvv2.uv) - Vector(uvv1.uv)
+def bilinear(tl, tr, br, bl, wx, wy):
+    t = tl * (1 - wx) + tr * wx
+    b = bl * (1 - wx) + br * wx
+    r = b  * (1 - wy) + t  * wy
+    return r
+
+def angle(uv1, uv2):
+    du, dv = Vector(uv2) - Vector(uv1)
     return atan2(dv, du)
+
+def uvvs_angle(uvv1, uvv2):
+    return angle(uvv1.uv, uvv2.uv)
 
 def get_bounding_box(uvvs):
     us = [uvv.u for uvv in uvvs]
@@ -383,6 +425,26 @@ def rotate(uvvs, angle, center):
         uv = M @ (uvv.uv - center) + center
         for l in uvv.loops_list:
             l[uvv.uvmap].uv = uv
+
+
+
+
+
+
+
+
+def grid_bfs_dist(start):
+    distances = {start: 0}
+    q = deque([start])
+    while q:
+        cur = q.popleft()
+        for nxt in cur.uvverts_set:
+            if nxt not in distances:
+                distances[nxt] = distances[cur] + 1
+                q.append(nxt)
+    return distances
+
+
 
 
 
@@ -500,7 +562,6 @@ def align_paths_on_grid(uvmesh):
     [[mu, mv], [Mu, Mv]] = get_bounding_box(uvvs)
     width = Mu - mu
     height = Mv - mv
-    print(Mv, mv, height)
     if width <= uvmesh.epsilon or height <= uvmesh.epsilon:
         lines = ["Unable to guess grid layout, bbox is flat."]
         if width <= uvmesh.epsilon:
@@ -563,6 +624,36 @@ def align_paths_on_grid(uvmesh):
 
 
 
+def align_grid(island):
+    grid_res = island.grid_size()
+    if grid_res:
+        m, n, A, X, B, Y = grid_res
+        tl, tr, br, bl = A.uv.copy(), X.uv.copy(), B.uv.copy(), Y.uv.copy()
+        for uvv in island.uvverts_set:
+            wx = uvv.x / (m - 1)
+            wy = 1 - uvv.y / (n - 1)
+            uv = bilinear(tl, tr, br, bl, wx, wy)
+            tmp = Vector((uvv.x, uvv.y)) / 10
+            uvv.move(uv)
+
+
+
+
+
+
+
+def align_grids(uvmesh):
+    for isl in uvmesh.islands:
+        align_grid(isl)
+
+
+
+
+
+
+
+
+
 
 #=========#=========#=========#=========#=========#=========#=========#=========
 # PRINT
@@ -572,14 +663,24 @@ def print_uvmesh(uvmesh):
     lines = []
     from datetime import datetime
 
-    lines.append("")
-    lines.append(f"=== UvMesh Diagnostic === {datetime.now().strftime("%H:%M:%S")}")
-
+    paths = set([isl for isl in uvmesh.islands if isl.ispath])
+    rings = set([isl for isl in uvmesh.islands if isl.isring])
+    trees = set([isl for isl in uvmesh.islands if isl.istree])
+    grids = set([isl for isl in uvmesh.islands if isl.isgrid])
+    others = set(uvmesh.islands) - (paths | rings | trees | grids)
     lines.append(f"{len(uvmesh.islands)} islands")
-    lines.append(f"- {len([isl for isl in uvmesh.islands if isl.ispath])} path(s)")
-    lines.append(f"- {len([isl for isl in uvmesh.islands if isl.isring])} ring(s)")
-    lines.append(f"- {len([isl for isl in uvmesh.islands if isl.istree])} tree(s)")
+    if paths:
+        lines.append(f"• {len(paths)} path(s), {[len(isl.uvverts_set) for isl in paths]}")
+    if rings:
+        lines.append(f"• {len(rings)} ring(s), {[len(isl.uvverts_set) for isl in rings]}")
+    if trees:
+        lines.append(f"• {len(trees)} tree(s), {[len(isl.uvverts_set) for isl in trees]}")
+    if grids:
+        lines.append(f"• {len(grids)} grid(s), {[(isl.gridx, isl.gridy) for isl in grids]}")
+    if others:
+        lines.append(f"• {len(others)} other(s), {[len(isl.uvverts_set) for isl in others]}")
 
-    lines.append("==========================")
     print("\n".join(lines))
     return lines
+
+# · • – — ← → ↑ ↓ ○ ● □ ■ △ ◇ ± × ÷ ≠ ≤ ≥ ≈ ° Ø × ✓

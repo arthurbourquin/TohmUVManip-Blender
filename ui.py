@@ -11,9 +11,16 @@ class VIEW3D_PT_UvGraph_Pannel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.label(text="Selection")
+        layout.operator("tohm.select_edges_by_angle")
+        layout.label(text="Paths Modifications")
         layout.operator("tohm.uvgraph_straighten_paths")
         layout.operator("tohm.reverse_paths")
         layout.operator("tohm.uvgraph_align_paths")
         layout.operator("tohm.uvgraph_align_paths_on_grid")
-        layout.operator("tohm.select_edges_by_angle")
+        layout.label(text="Grid Modifications")
+        layout.operator("tohm.uvgraph_align_grids")
+        layout.label(text="Informations")
         layout.operator("tohm.uvgraph_print")
+
+# · • – — ← → ↑ ↓ ○ ● □ ■ △ ◇ ± × ÷ ≠ ≤ ≥ ≈ ° Ø × ✓
