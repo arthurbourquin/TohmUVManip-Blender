@@ -1,53 +1,14 @@
-import bpy
-import bmesh
+# python
 import math
 
-from .UvGraph.UvGraph import UvGraph
+# Blender
+import bpy
+import bmesh
 
+# Tohm UV Manip
+from . import UvGraph
+from . import utils
 
-
-#=========#=========#=========#=========#=========#=========#=========#=========
-# UTILS
-#=========#=========#=========#=========#=========#=========#=========#=========
-
-def alert(message, title="Tohm UV Manip", icon='INFO'):
-    if isinstance(message, list):
-        lines = [str(msg) for msg in message]
-    elif isinstance(message, str):
-        lines = message.split("\n")
-    else:
-        lines = [str(message)]
-    def draw(self, context):
-        for l in lines:
-            self.layout.label(text=l)
-    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
-
-
-def get_bmesh_stuff():
-    _FAIL = (None, None, None, None)
-    if bpy.context.tool_settings.use_uv_select_sync == True:
-        bpy.context.tool_settings.use_uv_select_sync == False
-        alert("Tohm UV Manip doesn't support UV Sync Select mode.\nTurn it off to work with the addon.", )
-        return _FAIL
-    obj = bpy.context.active_object
-    if obj is None:
-        alert("No active object")
-        return _FAIL
-    if obj.type != "MESH":
-        alert(f"Active object is not a mesh: {obj.type}")
-        return _FAIL
-    bpy.ops.object.mode_set(mode='EDIT')
-    mesh = obj.data
-    bm = bmesh.from_edit_mesh(mesh)
-    bm.verts.ensure_lookup_table()
-    bm.verts.index_update()
-    uvmap = bm.loops.layers.uv.active
-    if not uvmap:
-        alert("Mesh has no UV map")
-        return _FAIL
-
-    return obj, mesh, bm, uvmap
-    
 
 
 
@@ -61,17 +22,74 @@ def get_bmesh_stuff():
 # OPERATORS
 #=========#=========#=========#=========#=========#=========#=========#=========
 
+class OBJECT_OT_SelectByAngle(bpy.types.Operator):
+    bl_idname = "tohm.select_edges_by_angle"
+    bl_label = "Select Edges By Angle"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    angle:     bpy.props.FloatProperty(name="Angle (deg)", default=0.0)
+    tolerance: bpy.props.FloatProperty(name="Tolerance (deg)", default=30)
+    additive:  bpy.props.BoolProperty( name="Additive", default=False)
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
+    def execute(self, context):
+        [obj, mesh, bm, uvmap] = utils.get_bmesh_stuff()
+        if not obj: return {'CANCELLED'}
+        angle = (self.angle * math.pi / 180) % math.pi
+        tolerance = (self.tolerance * math.pi / 180) % math.pi
+        if not self.additive:
+            for f in bm.faces:
+                for l in f.loops:
+                    l.uv_select_edge_set(False)
+                    l.uv_select_vert_set(False)
+        for f in bm.faces:
+            for l in f.loops:
+                u1, v1 = l[uvmap].uv
+                u2, v2 = l.link_loop_next[uvmap].uv
+                du = u2 - u1
+                dv = v2 - v1
+                if du == 0 and dv == 0:
+                    continue
+                a = math.atan2(dv, du) % math.pi
+                diff = abs(a - angle)
+                diff = min(diff, math.pi - diff)
+                if diff < tolerance:
+                    l.uv_select_edge_set(True)
+                    l.uv_select_vert_set(True)
+                    l.link_loop_next.uv_select_vert_set(True)
+        bmesh.update_edit_mesh(mesh)
+        return {'FINISHED'}
+
+    def check(self, context):
+        self.execute(context)
+        return True
+
+
+
+
+
+
+
+
+
+
+#=========#=========#=========#=========#=========#=========#=========#=========
+# OPERATORS USING UVGRAPH
+#=========#=========#=========#=========#=========#=========#=========#=========
+
 class OBJECT_OT_PrintUvGraph(bpy.types.Operator):
     bl_idname = "tohm.uvgraph_print"
     bl_label = "Print UvGraph"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+        [obj, mesh, bm, uvmap] = utils.get_bmesh_stuff()
         if not obj: return {'CANCELLED'}
-        uvgraph = UvGraph(obj, mesh, bm, uvmap)
-        message = uvgraph.print_self()
-        alert(message)
+        uvmesh = UvGraph.UvMesh(obj, mesh, bm, uvmap)
+        message = UvGraph.print_uvmesh(uvmesh)
+        utils.alert(message)
         return {'FINISHED'}
 
     def check(self, context):
@@ -102,10 +120,11 @@ class OBJECT_OT_StraightenPaths(bpy.types.Operator):
         return self.execute(context)
 
     def execute(self, context):
-        [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+        [obj, mesh, bm, uvmap] = utils.get_bmesh_stuff()
         if not obj: return {'CANCELLED'}
-        uvgraph = UvGraph(obj, mesh, bm, uvmap)
-        uvgraph.straighten_paths(
+        uvmesh = UvGraph.UvMesh(obj, mesh, bm, uvmap)
+        UvGraph.straighten_paths(
+            uvmesh,
             self.keep_paths_length,
             self.even_point_distribution,
             self.center_mode
@@ -125,10 +144,10 @@ class OBJECT_OT_ReversePaths(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+        [obj, mesh, bm, uvmap] = utils.get_bmesh_stuff()
         if not obj: return {'CANCELLED'}
-        uvgraph = UvGraph(obj, mesh, bm, uvmap)
-        uvgraph.reverse_paths()
+        uvmesh = UvGraph.UvMesh(obj, mesh, bm, uvmap)
+        UvGraph.reverse_paths(uvmesh)
         bmesh.update_edit_mesh(mesh)
         return {'FINISHED'}
 
@@ -140,10 +159,10 @@ class OBJECT_OT_AlignPaths(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+        [obj, mesh, bm, uvmap] = utils.get_bmesh_stuff()
         if not obj: return {'CANCELLED'}
-        uvgraph = UvGraph(obj, mesh, bm, uvmap)
-        uvgraph.align_paths()
+        uvmesh = UvGraph.UvMesh(obj, mesh, bm, uvmap)
+        UvGraph.align_paths(uvmesh)
         bmesh.update_edit_mesh(mesh)
         return {"FINISHED"}
 
@@ -155,55 +174,9 @@ class OBJECT_OT_AlignPathsOnGrid(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        [obj, mesh, bm, uvmap] = get_bmesh_stuff()
+        [obj, mesh, bm, uvmap] = utils.get_bmesh_stuff()
         if not obj: return {'CANCELLED'}
-        uvgraph = UvGraph(obj, mesh, bm, uvmap)
-        uvgraph.align_paths_on_grid()
+        uvmesh = UvGraph.UvMesh(obj, mesh, bm, uvmap)
+        UvGraph.align_paths_on_grid(uvmesh)
         bmesh.update_edit_mesh(mesh)
         return {'FINISHED'}
-
-
-
-class OBJECT_OT_SelectByAngle(bpy.types.Operator):
-    bl_idname = "tohm.select_edges_by_angle"
-    bl_label = "Select Edges By Angle"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    angle:     bpy.props.FloatProperty(name="Angle (deg)", default=0.0)
-    tolerance: bpy.props.FloatProperty(name="Tolerance (deg)", default=30)
-    additive:  bpy.props.BoolProperty( name="Additive", default=False)
-
-    def invoke(self, context, event):
-        return self.execute(context)
-
-    def execute(self, context):
-        [obj, mesh, bm, uvmap] = get_bmesh_stuff()
-        if not obj: return {'CANCELLED'}
-        angle = (self.angle * math.pi / 180) % math.pi
-        tolerance = (self.tolerance * math.pi / 180) % math.pi
-        if not self.additive:
-            for f in bm.faces:
-                for l in f.loops:
-                    l.uv_select_edge_set(False)
-                    l.uv_select_vert_set(False)
-        for f in bm.faces:
-            for l in f.loops:
-                u1, v1 = l[uvmap].uv
-                u2, v2 = l.link_loop_next[uvmap].uv
-                du = u2 - u1
-                dv = v2 - v1
-                if du == 0 and dv == 0:
-                    continue
-                a = math.atan2(dv, du) % math.pi
-                diff = abs(a - angle)
-                diff = min(diff, math.pi - diff)
-                if diff < tolerance:
-                    l.uv_select_edge_set(True)
-                    l.uv_select_vert_set(True)
-                    l.link_loop_next.uv_select_vert_set(True)
-        bmesh.update_edit_mesh(mesh)
-        return {'FINISHED'}
-
-    def check(self, context):
-        self.execute(context)
-        return True

@@ -2,7 +2,7 @@ import bpy
 
 
 class VIEW3D_PT_UvGraph_Pannel(bpy.types.Panel):
-    name = "UvGraph"
+    name = "Tohm UV Manip"
     bl_label = name
     bl_idname = "VIEW3D_PT_UvGraph_Pannel"
     bl_space_type = 'IMAGE_EDITOR'
