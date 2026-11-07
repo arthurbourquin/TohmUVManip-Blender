@@ -3,3 +3,8 @@
 > [!WARNING]
 > Work in progress, may be buggy.
 
+
+
+![message](./gifs/StraightenPaths.gif)
+
+![message](./gifs/AlignGrids.gif)
