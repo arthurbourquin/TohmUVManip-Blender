@@ -4,4 +4,6 @@
 > Work in progress, may be buggy.
 
 
-<img src="./gifs/StraightenPaths.gif" width="256">
+<img src="./gifs/StraightenPaths.gif" width="400">
+
+<img src="./gifs/AlignGrids.gif" width="400">
