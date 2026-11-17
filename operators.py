@@ -79,6 +79,7 @@ class OBJECT_OT_SelectByAngle(bpy.types.Operator):
 # MARK: - UvGraph
 #=========#=========#=========#=========#=========#=========#=========#=========
 
+
 class OBJECT_OT_PrintUvGraph(bpy.types.Operator):
     bl_idname = "tohm.uvgraph_print"
     bl_label = "Print UvGraph"

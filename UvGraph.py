@@ -117,10 +117,10 @@ class UVIsland:
         # if isgrid
         grid_res = self.grid_size()
         if grid_res is not None:
-            # mesh       dA         dY         sum        y          x
-            # A . . X    0 1 2 3    2 3 4 5    2 4 6 8    0 0 0 0    0 1 2 3
-            # . . . .    1 2 3 4    1 2 3 4    2 4 6 8    1 1 1 1    0 1 2 3
-            # Y . . B    2 3 4 5    0 1 2 3    2 4 6 8    2 2 2 2    0 1 2 3
+            # mesh       dA         dY         sum        x          y      
+            # A . . X    0 1 2 3    2 3 4 5    2 4 6 8    0 1 2 3    0 0 0 0
+            # . . . .    1 2 3 4    1 2 3 4    2 4 6 8    0 1 2 3    1 1 1 1
+            # Y . . B    2 3 4 5    0 1 2 3    2 4 6 8    0 1 2 3    2 2 2 2
             self.gridx, self.gridy, A, X, B, Y = grid_res
             dA = grid_bfs_dist(A)
             dY = grid_bfs_dist(Y)
@@ -154,6 +154,16 @@ class UVIsland:
     @property
     def isgrid(self):
         return self.grid_size() is not None
+
+    def has_triangle(self):
+        for uvv1 in self.uvverts_set:
+            for uvv2 in uvv1.uvverts_set:
+                if uvv1 is uvv2:
+                    continue
+                if len(uvv1.uvverts_set & uvv2.uvverts_set) != 0:
+                    return True
+        return False
+
 
     def grid_size(self):
         uvvs = self.uvverts_set
@@ -431,6 +441,28 @@ def rotate(uvvs, angle, center):
 
 
 
+# WIP to find quad UVIslands
+def get_quad_opp(o, a, b):
+    opp = a.uvverts_set & b.uvverts_set - set(o)
+    if len(opp) == 1: return next(iter(opp))
+    else:             return None
+def get_quad_d4(uvv): # len(uvv.uvverts_set) == 4
+    a, b, c, d = uvv.uvverts_set
+    ab = get_quad_opp(uvv, a, b)
+    bc = get_quad_opp(uvv, b, c)
+    cd = get_quad_opp(uvv, c, d)
+    da = get_quad_opp(uvv, d, a)
+    ac = get_quad_opp(uvv, a, c)
+    bd = get_quad_opp(uvv, b, d)
+    cand = [uvv for uvv in [ab, bc, cd, da, ac, bd] if uvv is not None]
+    if len(cand) != len(set(cand)):
+        return None
+    if len(cand) < 2 not in (2, 3, 4):
+        return None
+    return cand
+
+
+
 
 
 def grid_bfs_dist(start):
@@ -679,6 +711,9 @@ def print_uvmesh(uvmesh):
         lines.append(f"• {len(grids)} grid(s), {[(isl.gridx, isl.gridy) for isl in grids]}")
     if others:
         lines.append(f"• {len(others)} other(s), {[len(isl.uvverts_set) for isl in others]}")
+
+    for isl in uvmesh.islands:
+        lines.append("Has at least one triangle" if isl.has_triangle() else "Has no triangle")
 
     print("\n".join(lines))
     return lines
