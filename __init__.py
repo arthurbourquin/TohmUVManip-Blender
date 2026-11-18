@@ -36,6 +36,7 @@ classes = (
     operators.OBJECT_OT_AlignGrids,
 
     operators.OBJECT_OT_PrintUvGraph,
+    operators.OBJECT_OT_Debug,
 )
 
 

@@ -80,6 +80,28 @@ class OBJECT_OT_SelectByAngle(bpy.types.Operator):
 #=========#=========#=========#=========#=========#=========#=========#=========
 
 
+class OBJECT_OT_Debug(bpy.types.Operator):
+    bl_idname = "tohm.uvgraph_debug"
+    bl_label = "Debug"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        [obj, mesh, bm, uvmap] = utils.get_bmesh_stuff()
+        if not obj: return {'CANCELLED'}
+        uvmesh = UvGraph.UvMesh(obj, mesh, bm, uvmap)
+        for uvi in uvmesh.uvisland_list:
+            UvGraph.is_quad_grid(uvi)
+        return {'FINISHED'}
+
+    def check(self, context):
+        self.execute(context)
+        return True
+
+
+
+
+
+
 class OBJECT_OT_PrintUvGraph(bpy.types.Operator):
     bl_idname = "tohm.uvgraph_print"
     bl_label = "Print UvGraph"

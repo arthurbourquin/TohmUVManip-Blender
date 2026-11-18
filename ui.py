@@ -22,5 +22,7 @@ class VIEW3D_PT_UvGraph_Pannel(bpy.types.Panel):
         layout.operator("tohm.uvgraph_align_grids")
         layout.label(text="Informations")
         layout.operator("tohm.uvgraph_print")
+        layout.label(text="Misc")
+        layout.operator("tohm.uvgraph_debug")
 
 # · • – — ← → ↑ ↓ ○ ● □ ■ △ ◇ ± × ÷ ≠ ≤ ≥ ≈ ° Ø × ✓

@@ -225,7 +225,7 @@ class UvMesh:
         self.precision = 5
         self.epsilon = 10 ** -self.precision
 
-        self.islands = []
+        self.uvisland_list = []
 
         # SNAP LOOPS (why? why not? idk...)
         for f in bm.faces:
@@ -296,13 +296,13 @@ class UvMesh:
 
         # CREATE ISLANDS
 
-        islands_uvvert_lists = []
+        uvis_uvvert_lists = []
 
         # with leaf islands
         leaves = set([uvv for uvv in selected_uvvert_dict.values() if len(uvv.uvverts_set) == 1])
         while leaves:
-            island = set()
-            islands_uvvert_lists.append(island)
+            uvi = set()
+            uvis_uvvert_lists.append(uvi)
             root = leaves.pop()
             stack = [(root, 0)]
             while stack:
@@ -311,16 +311,16 @@ class UvMesh:
                     continue
                 cur_uvv.depth = depth
                 cur_uvv.isvisited = True
-                island.add(cur_uvv)
+                uvi.add(cur_uvv)
                 for nxt in cur_uvv.uvverts_set:
                     stack.append((nxt, depth + 1))
-            leaves -= island
+            leaves -= uvi
 
         # without leaves islands
         uvverts_left = set([uvv for uvv in selected_uvvert_dict.values() if not uvv.isvisited])
         while uvverts_left:
-            island = set()
-            islands_uvvert_lists.append(island)
+            uvi = set()
+            uvis_uvvert_lists.append(uvi)
             root = uvverts_left.pop()
             stack = [(root, 0)]
             while stack:
@@ -329,12 +329,12 @@ class UvMesh:
                     continue
                 cur_uvv.depth = depth
                 cur_uvv.isvisited = True
-                island.add(cur_uvv)
+                uvi.add(cur_uvv)
                 for nxt in cur_uvv.uvverts_set:
                     stack.append((nxt, depth + 1))
-            uvverts_left -= island
+            uvverts_left -= uvi
 
-        self.islands = [UVIsland(uvverts=uvvs) for uvvs in islands_uvvert_lists]
+        self.uvisland_list = [UVIsland(uvverts=uvvs) for uvvs in uvis_uvvert_lists]
 
 
 
@@ -392,8 +392,8 @@ def get_bounding_box(uvvs):
     vs = [uvv.v for uvv in uvvs]
     return [[min(us), min(vs)], [max(us), max(vs)]]
 
-def get_center(island, mode):
-    uvvs = list(island.uvverts_set)
+def get_center(uvi, mode):
+    uvvs = list(uvi.uvverts_set)
     if mode == "BBOX":
         [[mu, mv], [Mu, Mv]] = get_bounding_box(uvvs)
         uv = ((mu + Mu) / 2, (mv + Mv) / 2)
@@ -409,11 +409,11 @@ def get_center(island, mode):
         count = len(uvvs)
         return Vector((sum_u, sum_v)) / count
     elif mode == "HEADTAIL":
-        if not island.ispath:
+        if not uvi.ispath:
             print("Can't get head-tail midpoint: UvConnectedGraph is not a path.")
             return None
-        uv1 = Vector(island.head.uv)
-        uv2 = Vector(island.tail.uv)
+        uv1 = Vector(uvi.head.uv)
+        uv2 = Vector(uvi.tail.uv)
         return (uv1 + uv2) / 2
     else:
         print(f"Unknown center mode: {mode}")
@@ -442,24 +442,76 @@ def rotate(uvvs, angle, center):
 
 
 # WIP to find quad UVIslands
-def get_quad_opp(o, a, b):
-    opp = a.uvverts_set & b.uvverts_set - set(o)
-    if len(opp) == 1: return next(iter(opp))
-    else:             return None
-def get_quad_d4(uvv): # len(uvv.uvverts_set) == 4
-    a, b, c, d = uvv.uvverts_set
-    ab = get_quad_opp(uvv, a, b)
-    bc = get_quad_opp(uvv, b, c)
-    cd = get_quad_opp(uvv, c, d)
-    da = get_quad_opp(uvv, d, a)
-    ac = get_quad_opp(uvv, a, c)
-    bd = get_quad_opp(uvv, b, d)
-    cand = [uvv for uvv in [ab, bc, cd, da, ac, bd] if uvv is not None]
-    if len(cand) != len(set(cand)):
+def quad_get_opposite_corner(o, a, b):
+    try:
+        opp = a.uvverts_set & b.uvverts_set - set([o])
+        assert len(opp) == 1
+        return next(iter(opp))
+    except:
         return None
-    if len(cand) < 2 not in (2, 3, 4):
+
+
+
+
+# WIP
+def quad_get_opposite_corners(uvv):
+    if len(uvv.uvverts_set) <= 1 or len(uvv.uvverts_set) >= 5:
         return None
-    return cand
+    if len(uvv.uvverts_set) == 2:
+        a, b = uvv.uvverts_set
+        return [quad_get_opposite_corner(uvv, a, b)] # list of 1
+    if len(uvv.uvverts_set) == 3:
+        a, b, c = uvv.uvverts_set
+        ab = quad_get_opposite_corner(uvv, a, b)
+        bc = quad_get_opposite_corner(uvv, b, c)
+        ac = quad_get_opposite_corner(uvv, a, c)
+        cand = [uvv for uvv in [ab, bc, ac] if uvv is not None]
+        if len(cand) != len(set(cand)):
+            return None
+    if len(uvv.uvverts_set) == 4:
+        a, b, c, d = uvv.uvverts_set
+        ab = quad_get_opposite_corner(uvv, a, b)
+        bc = quad_get_opposite_corner(uvv, b, c)
+        cd = quad_get_opposite_corner(uvv, c, d)
+        da = quad_get_opposite_corner(uvv, d, a)
+        ac = quad_get_opposite_corner(uvv, a, c)
+        bd = quad_get_opposite_corner(uvv, b, d)
+        cand = [uvv for uvv in [ab, bc, cd, da, ac, bd] if uvv is not None]
+        if len(cand) != len(set(cand)):
+            return None
+        if len(cand) < 2 not in (2, 3, 4):
+            return None
+        return cand
+
+
+def is_quad_grid(uvi):
+    print("Is grid?")
+    for uvv in uvi.uvverts_set:
+        l = len(uvv.uvverts_set)
+        c = quad_get_opposite_corners(uvv)
+        if l <= 1:
+            print("Even no neighbors!")
+            return False
+        elif l >= 5:
+            print("More than 4 neighbors!")
+            return False
+        elif not c:
+            print("2, 3 or 4 neighbors but no corners")
+            return False
+        elif l == 2:
+            if len(c) != 1:
+                print("2 neignbors but not one corner")
+                return False
+        elif l == 3:
+            if len(c) != 2:
+                print("3 neignbors but not 2 corners")
+                return False
+        elif l == 4:
+            if len(c) not in (2, 3, 4):
+                print("4 neignbors but not 2, 3 or 4 corners")
+                return False
+    print("oh yeah")
+    return True
 
 
 
@@ -489,16 +541,16 @@ def grid_bfs_dist(start):
 # MARK: - FUNCTIONS
 #=========#=========#=========#=========#=========#=========#=========#=========
 
-def reverse_path(island):
-    if island.ispath:
-        n = len(island.sorted_uvverts)
-        for i, uvv in enumerate(island.sorted_uvverts):
+def reverse_path(uvi):
+    if uvi.ispath:
+        n = len(uvi.sorted_uvverts)
+        for i, uvv in enumerate(uvi.sorted_uvverts):
             uvv.depth = n - 1 - i
-        island.head, island.tail = (island.tail, island.head)
+        uvi.head, uvi.tail = (uvi.tail, uvi.head)
 
 def reverse_paths(uvmesh):
-    for island in uvmesh.islands:
-        reverse_path(island)
+    for uvi in uvmesh.uvisland_list:
+        reverse_path(uvi)
 
 
 
@@ -509,16 +561,16 @@ def reverse_paths(uvmesh):
 
 
 
-def straighten_path(island, keep_paths_length, even_point_distribution, center_mode):
-    if island.ispath:
-        uv_head = Vector(island.head.uv)
-        uv_tail = Vector(island.tail.uv)
+def straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode):
+    if uvi.ispath:
+        uv_head = Vector(uvi.head.uv)
+        uv_tail = Vector(uvi.tail.uv)
         htcenter = (uv_head + uv_tail) / 2
-        target_center = get_center(island, center_mode)
+        target_center = get_center(uvi, center_mode)
         offset = target_center - htcenter
         htdist = (uv_head - uv_tail).length
         if keep_paths_length:
-            ratio = island.length / htdist
+            ratio = uvi.length / htdist
             uv_head = htcenter + ratio * (uv_head - htcenter)
             uv_tail = htcenter + ratio * (uv_tail - htcenter)
         uv_head += offset
@@ -529,7 +581,7 @@ def straighten_path(island, keep_paths_length, even_point_distribution, center_m
         # path (1)           o-------o-----o------------o
         # uvvert idx (4)     0       1     2            3
         # distribution (4)   0       0.3   0.5          1.0  (normalized)
-        uvv_count = len(island.uvverts_set)
+        uvv_count = len(uvi.uvverts_set)
         uve_count = uvv_count - 1
         distribution = [0.0] * uvv_count # init only size
         if even_point_distribution:
@@ -538,16 +590,16 @@ def straighten_path(island, keep_paths_length, even_point_distribution, center_m
         else:
             acc = 0.0
             for i in range(uve_count):
-                acc += island.sorted_uvedges[i].length
-                distribution[i + 1] = acc / island.length
+                acc += uvi.sorted_uvedges[i].length
+                distribution[i + 1] = acc / uvi.length
 
-        for i, uvv in enumerate(island.sorted_uvverts):
+        for i, uvv in enumerate(uvi.sorted_uvverts):
             uv = lerp(uv_head, uv_tail, distribution[i])
             uvv.move(uv)
 
 def straighten_paths(uvmesh, keep_paths_length, even_point_distribution, center_mode):
-    for island in uvmesh.islands:
-        straighten_path(island, keep_paths_length, even_point_distribution, center_mode)
+    for uvi in uvmesh.uvisland_list:
+        straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode)
 
 
 
@@ -560,7 +612,7 @@ def straighten_paths(uvmesh, keep_paths_length, even_point_distribution, center_
 
 def align_paths(uvmesh):
     # Assert paths are straight
-    paths = [isl for isl in uvmesh.islands if isl.ispath]
+    paths = [uvi for uvi in uvmesh.uvisland_list if uvi.ispath]
     angles = [uvvs_angle(p.head, p.tail) for p in paths]
     # Mean undirected angle
     c = sum(cos(2 * a) for a in angles)
@@ -582,7 +634,7 @@ def align_paths(uvmesh):
 
 
 def align_paths_on_grid(uvmesh):
-    paths = [isl for isl in uvmesh.islands if isl.ispath]
+    paths = [uvi for uvi in uvmesh.uvisland_list if uvi.ispath]
     if len(paths) <= 1:
         utils.alert(f"Need at least 2 paths, found {len(paths)}")
         return
@@ -656,12 +708,12 @@ def align_paths_on_grid(uvmesh):
 
 
 
-def align_grid(island):
-    grid_res = island.grid_size()
+def align_grid(uvi):
+    grid_res = uvi.grid_size()
     if grid_res:
         m, n, A, X, B, Y = grid_res
         tl, tr, br, bl = A.uv.copy(), X.uv.copy(), B.uv.copy(), Y.uv.copy()
-        for uvv in island.uvverts_set:
+        for uvv in uvi.uvverts_set:
             wx = uvv.x / (m - 1)
             wy = 1 - uvv.y / (n - 1)
             uv = bilinear(tl, tr, br, bl, wx, wy)
@@ -675,8 +727,8 @@ def align_grid(island):
 
 
 def align_grids(uvmesh):
-    for isl in uvmesh.islands:
-        align_grid(isl)
+    for uvi in uvmesh.uvisland_list:
+        align_grid(uvi)
 
 
 
@@ -695,25 +747,25 @@ def print_uvmesh(uvmesh):
     lines = []
     from datetime import datetime
 
-    paths = set([isl for isl in uvmesh.islands if isl.ispath])
-    rings = set([isl for isl in uvmesh.islands if isl.isring])
-    trees = set([isl for isl in uvmesh.islands if isl.istree])
-    grids = set([isl for isl in uvmesh.islands if isl.isgrid])
-    others = set(uvmesh.islands) - (paths | rings | trees | grids)
-    lines.append(f"{len(uvmesh.islands)} islands")
+    paths = set([uvi for uvi in uvmesh.uvisland_list if uvi.ispath])
+    rings = set([uvi for uvi in uvmesh.uvisland_list if uvi.isring])
+    trees = set([uvi for uvi in uvmesh.uvisland_list if uvi.istree])
+    grids = set([uvi for uvi in uvmesh.uvisland_list if uvi.isgrid])
+    others = set(uvmesh.uvisland_list) - (paths | rings | trees | grids)
+    lines.append(f"{len(uvmesh.uvisland_list)} islands")
     if paths:
-        lines.append(f"• {len(paths)} path(s), {[len(isl.uvverts_set) for isl in paths]}")
+        lines.append(f"• {len(paths)} path(s), {[len(uvi.uvverts_set) for uvi in paths]}")
     if rings:
-        lines.append(f"• {len(rings)} ring(s), {[len(isl.uvverts_set) for isl in rings]}")
+        lines.append(f"• {len(rings)} ring(s), {[len(uvi.uvverts_set) for uvi in rings]}")
     if trees:
-        lines.append(f"• {len(trees)} tree(s), {[len(isl.uvverts_set) for isl in trees]}")
+        lines.append(f"• {len(trees)} tree(s), {[len(uvi.uvverts_set) for uvi in trees]}")
     if grids:
-        lines.append(f"• {len(grids)} grid(s), {[(isl.gridx, isl.gridy) for isl in grids]}")
+        lines.append(f"• {len(grids)} grid(s), {[(uvi.gridx, uvi.gridy) for uvi in grids]}")
     if others:
-        lines.append(f"• {len(others)} other(s), {[len(isl.uvverts_set) for isl in others]}")
+        lines.append(f"• {len(others)} other(s), {[len(uvi.uvverts_set) for uvi in others]}")
 
-    for isl in uvmesh.islands:
-        lines.append("Has at least one triangle" if isl.has_triangle() else "Has no triangle")
+    for uvi in uvmesh.uvisland_list:
+        lines.append("Has at least one triangle" if uvi.has_triangle() else "Has no triangle")
 
     print("\n".join(lines))
     return lines
