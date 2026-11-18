@@ -447,7 +447,20 @@ def rotate(uvvs, angle, center):
 
 
 
-# WIP to find quad UVIslands
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def quad_get_opposite_corner(o, a, b):
     try:
         ab = a.uvverts_set & b.uvverts_set
@@ -458,8 +471,6 @@ def quad_get_opposite_corner(o, a, b):
     except:
         return None
 
-
-# WIP
 def quad_get_opposite_corners(uvv):
     n = len(uvv.uvverts_set)
     if n <= 1 or n >= 5:
@@ -494,12 +505,10 @@ def quad_get_opposite_corners(uvv):
             return []
         return cand
 
-
 def is_quad_grid(uvi):
     for uvv in uvi.uvverts_set:
         l = len(uvv.uvverts_set)
         c = len(quad_get_opposite_corners(uvv))
-        print(uvv.index, l, c)
         if l <= 1 or l >= 5:
             return False
         elif not c:
@@ -514,6 +523,12 @@ def is_quad_grid(uvi):
             if c not in (2, 3, 4):
                 return False
     return True
+
+
+
+
+
+
 
 
 

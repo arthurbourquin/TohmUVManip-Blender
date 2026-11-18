@@ -90,9 +90,7 @@ class OBJECT_OT_Debug(bpy.types.Operator):
         if not obj: return {'CANCELLED'}
         uvmesh = UvGraph.UvMesh(obj, mesh, bm, uvmap)
         for uvi in uvmesh.uvisland_list:
-            for uvv in uvi.uvverts_set:
-                opps = UvGraph.quad_get_opposite_corners(uvv)
-                print([uvv.index for uvv in opps])
+            print(UvGraph.is_quad_grid(uvi))
         return {'FINISHED'}
 
     def check(self, context):
