@@ -30,6 +30,7 @@ from . import utils
 class UVVert:
     def __init__(self, uvmap):
         self.uvmap = uvmap
+        self.index = None
         self.select = None
         self.depth = -1 # for bfs and paths indexing
         self.isvisited = False
@@ -60,6 +61,7 @@ class UVVert:
 
 class UVEdge:
     def __init__(self, uvv1, uvv2):
+        self.index = None
         self.uvv1 = uvv1
         self.uvv2 = uvv2
         self.select = None
@@ -244,6 +246,8 @@ class UvMesh:
                 if uv not in uvvert_dict:
                     uvvert_dict[uv] = UVVert(self.uvmap)
                 uvvert_dict[uv].loops_list.append(l)
+        for i, uvv in enumerate(uvvert_dict.values()):
+            uvv.index = i
 
         uvedge_dict = {}
         for f in bm.faces:
@@ -256,6 +260,8 @@ class UvMesh:
                 if not uvv_pair in uvedge_dict:
                     uvv1, uvv2 = uvv_pair
                     uvedge_dict[uvv_pair] = UVEdge(uvv1, uvv2)
+        for i, uve in enumerate(uvedge_dict.values()):
+            uve.index = i
 
         # SET SELECTED
         # set selection based on loops uv_select_edge
@@ -444,31 +450,36 @@ def rotate(uvvs, angle, center):
 # WIP to find quad UVIslands
 def quad_get_opposite_corner(o, a, b):
     try:
-        opp = a.uvverts_set & b.uvverts_set - set([o])
+        ab = a.uvverts_set & b.uvverts_set
+        seto = set([o])
+        opp = ab - seto
         assert len(opp) == 1
         return next(iter(opp))
     except:
         return None
 
 
-
-
 # WIP
 def quad_get_opposite_corners(uvv):
-    if len(uvv.uvverts_set) <= 1 or len(uvv.uvverts_set) >= 5:
-        return None
-    if len(uvv.uvverts_set) == 2:
+    n = len(uvv.uvverts_set)
+    if n <= 1 or n >= 5:
+        return []
+    if n == 2:
         a, b = uvv.uvverts_set
-        return [quad_get_opposite_corner(uvv, a, b)] # list of 1
-    if len(uvv.uvverts_set) == 3:
+        c = quad_get_opposite_corner(uvv, a, b)
+        return [c] if c is not None else []
+    if n == 3:
         a, b, c = uvv.uvverts_set
         ab = quad_get_opposite_corner(uvv, a, b)
         bc = quad_get_opposite_corner(uvv, b, c)
         ac = quad_get_opposite_corner(uvv, a, c)
         cand = [uvv for uvv in [ab, bc, ac] if uvv is not None]
-        if len(cand) != len(set(cand)):
-            return None
-    if len(uvv.uvverts_set) == 4:
+        if len(cand) != len({x for x in cand}):
+            return []
+        if len(cand) != 2:
+            return []
+        return cand
+    if n == 4:
         a, b, c, d = uvv.uvverts_set
         ab = quad_get_opposite_corner(uvv, a, b)
         bc = quad_get_opposite_corner(uvv, b, c)
@@ -477,40 +488,31 @@ def quad_get_opposite_corners(uvv):
         ac = quad_get_opposite_corner(uvv, a, c)
         bd = quad_get_opposite_corner(uvv, b, d)
         cand = [uvv for uvv in [ab, bc, cd, da, ac, bd] if uvv is not None]
-        if len(cand) != len(set(cand)):
-            return None
-        if len(cand) < 2 not in (2, 3, 4):
-            return None
+        if len(cand) != len({x for x in cand}):
+            return []
+        if len(cand) not in (2, 3, 4):
+            return []
         return cand
 
 
 def is_quad_grid(uvi):
-    print("Is grid?")
     for uvv in uvi.uvverts_set:
         l = len(uvv.uvverts_set)
-        c = quad_get_opposite_corners(uvv)
-        if l <= 1:
-            print("Even no neighbors!")
-            return False
-        elif l >= 5:
-            print("More than 4 neighbors!")
+        c = len(quad_get_opposite_corners(uvv))
+        print(uvv.index, l, c)
+        if l <= 1 or l >= 5:
             return False
         elif not c:
-            print("2, 3 or 4 neighbors but no corners")
             return False
         elif l == 2:
-            if len(c) != 1:
-                print("2 neignbors but not one corner")
+            if c != 1:
                 return False
         elif l == 3:
-            if len(c) != 2:
-                print("3 neignbors but not 2 corners")
+            if c != 2:
                 return False
         elif l == 4:
-            if len(c) not in (2, 3, 4):
-                print("4 neignbors but not 2, 3 or 4 corners")
+            if c not in (2, 3, 4):
                 return False
-    print("oh yeah")
     return True
 
 
