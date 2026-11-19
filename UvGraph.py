@@ -67,8 +67,7 @@ class UVEdge:
         self.select = None
         self.uvedges_set = set()
 
-    @property
-    def length(self):
+    def get_length(self):
         du = self.uvv2.uv.x - self.uvv1.uv.x
         dv = self.uvv2.uv.y - self.uvv1.uv.y
         return sqrt(du*du + dv*dv)
@@ -82,28 +81,36 @@ class UVIsland:
         uvverts = uvverts if uvverts is not None else set()
         uvedges = uvedges if uvedges is not None else set()
 
-        self.uvverts_set = set(uvverts)
-        self.uvedges_set = set(uvedges)
+        self.uvverts_set = None
+        self.uvedges_set = None
+        self.sorted_uvverts = None
+        self.sorted_uvedges = None
+
         self.root = None
+        self.head = None
+        self.tail = None
 
-        self.sorted_uvverts = None # paths grid
-        self.sorted_uvedges = None # paths
-        self.head = None # path
-        self.tail = None # path
-        self.gridx = None # grid
-        self.gridy = None # grid
+        self.is_path = None
+        self.is_ring = None
+        self.is_quad_grid = None
+        self.is_rect_grid = None
 
+        self.grid_width = None
+        self.grid_height = None
+
+        self.uvedges_set = set(uvedges)
         for uve in self.uvedges_set:
             self.uvverts_set.add(uve.uvv1)
             self.uvverts_set.add(uve.uvv2)
 
+        self.uvverts_set = set(uvverts)
         for uvv in self.uvverts_set:
             self.uvedges_set.update(uvv.uvedges_set)
 
-        if self.istree:
-            self.root = [uvv for uvv in self.uvverts_set if uvv.depth == 0][0]
+        self.is_path = len(self.get_leaves()) == 2 and self.degree <= 2
+        self.is_ring = len(self.get_leaves()) == 0 and self.degree == 2
 
-        if self.ispath:
+        if self.is_path:
             leaves = [uvv for uvv in self.uvverts_set if len(uvv.uvverts_set) == 1]
             self.head, self.tail = sorted(leaves, key=lambda uvv: uvv.depth)
 
@@ -116,103 +123,35 @@ class UVIsland:
                 assert uve is not None, "No uvedge found in island"
                 self.sorted_uvedges.append(uve)
 
-        # if isgrid
-        grid_res = self.grid_size()
+        grid_res = grid_size(self)
         if grid_res is not None:
+            self.is_rect_grid = self.is_quad_grid = True
             # mesh       dA         dY         sum        x          y      
             # A . . X    0 1 2 3    2 3 4 5    2 4 6 8    0 1 2 3    0 0 0 0
             # . . . .    1 2 3 4    1 2 3 4    2 4 6 8    0 1 2 3    1 1 1 1
             # Y . . B    2 3 4 5    0 1 2 3    2 4 6 8    0 1 2 3    2 2 2 2
-            self.gridx, self.gridy, A, X, B, Y = grid_res
+            self.grid_width, self.grid_height, A, X, B, Y = grid_res
             dA = grid_bfs_dist(A)
             dY = grid_bfs_dist(Y)
             for uvv in self.uvverts_set:
                 sum = dA[uvv] + dY[uvv]
-                uvv.x = (sum - (self.gridy - 1)) // 2
+                uvv.x = (sum - (self.grid_height - 1)) // 2
                 uvv.y = dA[uvv] - uvv.x
             self.sorted_uvverts = sorted(self.uvverts_set, key=lambda uvv: (uvv.x, uvv.y))
 
+        if self.is_quad_grid is None:
+            self.is_quad_grid = is_quad_grid(self)
+
     @property
     def degree(self): return max([len(uvv.uvverts_set) for uvv in self.uvverts_set], default=0)
-    @property
-    def length(self): return sum([uve.length for uve in self.uvedges_set])
+
+    def get_length(self): return sum([uve.get_length() for uve in self.uvedges_set])
 
     def get_leaves(self):
         return [uvv for uvv in self.uvverts_set if len(uvv.uvverts_set) == 1]
 
-    @property
-    def ispath(self):
-        has_two_leaves = len(self.get_leaves()) == 2
-        return has_two_leaves and self.degree <= 2
-    @property
-    def isring(self):
-        has_no_leaves = len(self.get_leaves()) == 0
-        return has_no_leaves and self.degree == 2
-    @property
-    def istree(self): # but not path!
-        is_tree = len(self.uvverts_set) == len(self.uvedges_set) + 1
-        is_not_path = self.degree > 2
-        return is_tree and is_not_path
-    @property
-    def isgrid(self):
-        return self.grid_size() is not None
-
-    def has_triangle(self):
-        for uvv1 in self.uvverts_set:
-            for uvv2 in uvv1.uvverts_set:
-                if uvv1 is uvv2:
-                    continue
-                if len(uvv1.uvverts_set & uvv2.uvverts_set) != 0:
-                    return True
-        return False
 
 
-    def grid_size(self):
-        uvvs = self.uvverts_set
-        V, E = len(uvvs), len(self.uvedges_set)
-
-        border = {v for v in uvvs if len(v.uvverts_set) in (2, 3)}
-        corners = [v for v in border if len(v.uvverts_set) == 2]
-        interns = [v for v in uvvs if len(v.uvverts_set) == 4]
-        if len(corners) != 4 or len(border) + len(interns) != V:
-            return None
-
-        v1, v2, v3, v4 = [Vector(uvv.uv) for uvv in corners]
-        center = (v1 + v2 + v3 + v4) / 4
-        visually_sorted_corners = sorted(corners, key=lambda uvv: -angle(center, uvv.uv))
-
-        A = visually_sorted_corners[0]
-        walk = [A]
-        cur = A
-        while True:
-            nexts = [uvv for uvv in cur.uvverts_set if uvv in border and uvv not in walk]
-            if not nexts:
-                break
-            if len(nexts) > 1 and cur is not A:
-                return None
-            cur = nexts[0]
-            walk.append(cur)
-
-        if len(walk) != len(border) or A not in cur.uvverts_set:
-            return None
-
-        ordered_corners = [(uvv, idx) for idx, uvv in enumerate(walk) if len(uvv.uvverts_set) == 2]
-        (A, a), (X, x), (B, b), (Y, y) = ordered_corners
-        m = x - a + 1
-        n = b - x + 1
-        m_ = y - b + 1
-        n_ = len(walk) - y + 1
-        if m != m_ or n != n_:
-            return None
-        if m * n != V or E != m * (n - 1) + n * (m - 1):
-            return None
-        if len(interns) != (m - 2) * (n - 2):
-            return None
-        flip = ordered_corners[1] == visually_sorted_corners[1]
-        if flip:
-            return m, n, A, X, B, Y
-        else:
-            return n, m, A, Y, B, X
 
 
 # MARK: - UvMesh
@@ -229,7 +168,7 @@ class UvMesh:
 
         self.uvisland_list = []
 
-        # SNAP LOOPS (why? why not? idk...)
+        # SNAP LOOPS (why? why not? idk...) -> need cluterization somehow
         for f in bm.faces:
             for l in f.loops:
                 u, v = l[self.uvmap].uv
@@ -415,7 +354,7 @@ def get_center(uvi, mode):
         count = len(uvvs)
         return Vector((sum_u, sum_v)) / count
     elif mode == "HEADTAIL":
-        if not uvi.ispath:
+        if not uvi.is_path:
             print("Can't get head-tail midpoint: UvConnectedGraph is not a path.")
             return None
         uv1 = Vector(uvi.head.uv)
@@ -455,7 +394,14 @@ def rotate(uvvs, angle, center):
 
 
 
-
+def has_triangle(uvi):
+    for uvv1 in uvi.uvverts_set:
+        for uvv2 in uvv1.uvverts_set:
+            if uvv1 is uvv2:
+                continue
+            if len(uvv1.uvverts_set & uvv2.uvverts_set) != 0:
+                return True
+    return False
 
 
 
@@ -505,24 +451,6 @@ def quad_get_opposite_corners(uvv):
             return []
         return cand
 
-def is_quad_grid(uvi):
-    for uvv in uvi.uvverts_set:
-        l = len(uvv.uvverts_set)
-        c = len(quad_get_opposite_corners(uvv))
-        if l <= 1 or l >= 5:
-            return False
-        elif not c:
-            return False
-        elif l == 2:
-            if c != 1:
-                return False
-        elif l == 3:
-            if c != 2:
-                return False
-        elif l == 4:
-            if c not in (2, 3, 4):
-                return False
-    return True
 
 
 
@@ -554,12 +482,94 @@ def grid_bfs_dist(start):
 
 
 
+
+
+
+def is_quad_grid(uvi):
+    if has_triangle(uvi):
+        return False
+    if uvi.degree not in (2, 3, 4):
+        return False
+    for uvv in uvi.uvverts_set:
+        l = len(uvv.uvverts_set)
+        c = len(quad_get_opposite_corners(uvv))
+        if l <= 1 or l >= 5:
+            return False
+        elif not c:
+            return False
+        elif l == 2:
+            if c != 1:
+                return False
+        elif l == 3:
+            if c != 2:
+                return False
+        elif l == 4:
+            if c not in (2, 3, 4):
+                return False
+    return True
+
+
+def grid_size(uvi):
+    uvvs = uvi.uvverts_set
+    V, E = len(uvvs), len(uvi.uvedges_set)
+
+    border = {v for v in uvvs if len(v.uvverts_set) in (2, 3)}
+    corners = [v for v in border if len(v.uvverts_set) == 2]
+    interns = [v for v in uvvs if len(v.uvverts_set) == 4]
+    if len(corners) != 4 or len(border) + len(interns) != V:
+        return None
+
+    v1, v2, v3, v4 = [Vector(uvv.uv) for uvv in corners]
+    center = (v1 + v2 + v3 + v4) / 4
+    visually_sorted_corners = sorted(corners, key=lambda uvv: -angle(center, uvv.uv))
+
+    A = visually_sorted_corners[0]
+    walk = [A]
+    cur = A
+    while True:
+        nexts = [uvv for uvv in cur.uvverts_set if uvv in border and uvv not in walk]
+        if not nexts:
+            break
+        if len(nexts) > 1 and cur is not A:
+            return None
+        cur = nexts[0]
+        walk.append(cur)
+
+    if len(walk) != len(border) or A not in cur.uvverts_set:
+        return None
+
+    ordered_corners = [(uvv, idx) for idx, uvv in enumerate(walk) if len(uvv.uvverts_set) == 2]
+    (A, a), (X, x), (B, b), (Y, y) = ordered_corners
+    m = x - a + 1
+    n = b - x + 1
+    m_ = y - b + 1
+    n_ = len(walk) - y + 1
+    if m != m_ or n != n_:
+        return None
+    if m * n != V or E != m * (n - 1) + n * (m - 1):
+        return None
+    if len(interns) != (m - 2) * (n - 2):
+        return None
+    flip = ordered_corners[1] == visually_sorted_corners[1]
+    if flip:
+        return m, n, A, X, B, Y
+    else:
+        return n, m, A, Y, B, X
+
+
+def is_rect_grid(uvi):
+    return grid_size(uvi) is not None
+
+
+
+
+
 #=========#=========#=========#=========#=========#=========#=========#=========
 # MARK: - FUNCTIONS
 #=========#=========#=========#=========#=========#=========#=========#=========
 
 def reverse_path(uvi):
-    if uvi.ispath:
+    if uvi.is_path:
         n = len(uvi.sorted_uvverts)
         for i, uvv in enumerate(uvi.sorted_uvverts):
             uvv.depth = n - 1 - i
@@ -579,7 +589,7 @@ def reverse_paths(uvmesh):
 
 
 def straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode):
-    if uvi.ispath:
+    if uvi.is_path:
         uv_head = Vector(uvi.head.uv)
         uv_tail = Vector(uvi.tail.uv)
         htcenter = (uv_head + uv_tail) / 2
@@ -587,7 +597,7 @@ def straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode
         offset = target_center - htcenter
         htdist = (uv_head - uv_tail).length
         if keep_paths_length:
-            ratio = uvi.length / htdist
+            ratio = uvi.get_length() / htdist
             uv_head = htcenter + ratio * (uv_head - htcenter)
             uv_tail = htcenter + ratio * (uv_tail - htcenter)
         uv_head += offset
@@ -607,8 +617,8 @@ def straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode
         else:
             acc = 0.0
             for i in range(uve_count):
-                acc += uvi.sorted_uvedges[i].length
-                distribution[i + 1] = acc / uvi.length
+                acc += uvi.sorted_uvedges[i].get_length()
+                distribution[i + 1] = acc / uvi.get_length()
 
         for i, uvv in enumerate(uvi.sorted_uvverts):
             uv = lerp(uv_head, uv_tail, distribution[i])
@@ -629,7 +639,7 @@ def straighten_paths(uvmesh, keep_paths_length, even_point_distribution, center_
 
 def align_paths(uvmesh):
     # Assert paths are straight
-    paths = [uvi for uvi in uvmesh.uvisland_list if uvi.ispath]
+    paths = [uvi for uvi in uvmesh.uvisland_list if uvi.is_path]
     angles = [uvvs_angle(p.head, p.tail) for p in paths]
     # Mean undirected angle
     c = sum(cos(2 * a) for a in angles)
@@ -651,7 +661,7 @@ def align_paths(uvmesh):
 
 
 def align_paths_on_grid(uvmesh):
-    paths = [uvi for uvi in uvmesh.uvisland_list if uvi.ispath]
+    paths = [uvi for uvi in uvmesh.uvisland_list if uvi.is_path]
     if len(paths) <= 1:
         utils.alert(f"Need at least 2 paths, found {len(paths)}")
         return
@@ -726,7 +736,7 @@ def align_paths_on_grid(uvmesh):
 
 
 def align_grid(uvi):
-    grid_res = uvi.grid_size()
+    grid_res = grid_size(uvi)
     if grid_res:
         m, n, A, X, B, Y = grid_res
         tl, tr, br, bl = A.uv.copy(), X.uv.copy(), B.uv.copy(), Y.uv.copy()
@@ -736,12 +746,6 @@ def align_grid(uvi):
             uv = bilinear(tl, tr, br, bl, wx, wy)
             tmp = Vector((uvv.x, uvv.y)) / 10
             uvv.move(uv)
-
-
-
-
-
-
 
 def align_grids(uvmesh):
     for uvi in uvmesh.uvisland_list:
@@ -764,25 +768,37 @@ def print_uvmesh(uvmesh):
     lines = []
     from datetime import datetime
 
-    paths = set([uvi for uvi in uvmesh.uvisland_list if uvi.ispath])
-    rings = set([uvi for uvi in uvmesh.uvisland_list if uvi.isring])
-    trees = set([uvi for uvi in uvmesh.uvisland_list if uvi.istree])
-    grids = set([uvi for uvi in uvmesh.uvisland_list if uvi.isgrid])
-    others = set(uvmesh.uvisland_list) - (paths | rings | trees | grids)
-    lines.append(f"{len(uvmesh.uvisland_list)} islands")
-    if paths:
-        lines.append(f"• {len(paths)} path(s), {[len(uvi.uvverts_set) for uvi in paths]}")
-    if rings:
-        lines.append(f"• {len(rings)} ring(s), {[len(uvi.uvverts_set) for uvi in rings]}")
-    if trees:
-        lines.append(f"• {len(trees)} tree(s), {[len(uvi.uvverts_set) for uvi in trees]}")
-    if grids:
-        lines.append(f"• {len(grids)} grid(s), {[(uvi.gridx, uvi.gridy) for uvi in grids]}")
-    if others:
-        lines.append(f"• {len(others)} other(s), {[len(uvi.uvverts_set) for uvi in others]}")
+    paths = set([uvi for uvi in uvmesh.uvisland_list if uvi.is_path])
+    rings = set([uvi for uvi in uvmesh.uvisland_list if uvi.is_ring])
+    quad_grids = set([uvi for uvi in uvmesh.uvisland_list if uvi.is_quad_grid])
+    rect_grids = set([uvi for uvi in uvmesh.uvisland_list if uvi.is_rect_grid])
 
-    for uvi in uvmesh.uvisland_list:
-        lines.append("Has at least one triangle" if uvi.has_triangle() else "Has no triangle")
+    d_paths = paths - rings
+    d_rings = rings
+    d_quad_grids = quad_grids - rect_grids
+    d_rect_grids = rect_grids
+
+    others = set(uvmesh.uvisland_list) - (d_paths | d_rings | d_quad_grids | d_rect_grids)
+    lines.append(f"{len(uvmesh.uvisland_list)} islands")
+    if d_paths:
+        counts_ = [len(uvi.uvverts_set) for uvi in d_paths]
+        counts = ", ".join([str(n) for n in counts_])
+        lines.append(f"• {len(d_paths)} path(s): {counts}")
+    if d_rings:
+        counts_ = [len(uvi.uvverts_set) for uvi in d_rings]
+        counts = ", ".join([str(n) for n in counts_])
+        lines.append(f"• {len(d_rings)} ring(s): {counts}")
+    if d_quad_grids:
+        counts_ = [len(uvi.uvverts_set) for uvi in d_quad_grids]
+        counts = ", ".join([str(n) for n in counts_])
+        lines.append(f"• {len(d_quad_grids)} quad grid(s): {counts}")
+    if d_rect_grids:
+        dims = ", ".join([f"{uvi.grid_width}x{uvi.grid_height}" for uvi in d_rect_grids])
+        lines.append(f"• {len(d_rect_grids)} rectangle grid(s): {dims}")
+    if others:
+        counts_ = [len(uvi.uvverts_set) for uvi in others]
+        counts = ", ".join([str(n) for n in counts_])
+        lines.append(f"• {len(others)} other(s): {counts}")
 
     print("\n".join(lines))
     return lines

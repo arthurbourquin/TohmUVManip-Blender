@@ -38,10 +38,12 @@ def alert(message, title="Tohm UV Manip", icon='INFO'):
 
 def get_bmesh_stuff():
     _FAIL = (None, None, None, None)
+    """
     if bpy.context.tool_settings.use_uv_select_sync == True:
         bpy.context.tool_settings.use_uv_select_sync == False
         alert("Tohm UV Manip doesn't support UV Sync Select mode.\nTurn it off to work with the addon.", )
         return _FAIL
+    """
     obj = bpy.context.active_object
     if obj is None:
         alert("No active object")
