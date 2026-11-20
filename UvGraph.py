@@ -90,6 +90,11 @@ class UvQuad:
         assert len(uvvs) == 4, "Wrong uvv count for UvQuad"
         self.uvverts_tupl = None
         self.uvedges_tupl = None
+        # adjascent UvQuads
+        self.top    = None
+        self.right  = None
+        self.bottom = None
+        self.left   = None
         self.key = frozenset(uvvs)
 
         a, x, y, z = uvvs
@@ -199,11 +204,11 @@ class UvIsland:
         if self.is_quad_grid:
             self.is_knot_grid = is_knot_grid(self)
 
-            for uvv in self.uvverts_set:
-                self.uvquads_set.update(
-                    UvQuad((uvv, a, o, b))
-                    for o, (a, b) in quad_get_opposite_corners_plus(uvv).items()
-                )
+        for uvv in self.uvverts_set:
+            self.uvquads_set.update(
+                UvQuad((uvv, a, o, b))
+                for o, (a, b) in quad_get_opposite_corners_plus(uvv).items()
+            )
 
 
 
@@ -526,7 +531,7 @@ def quad_get_opposite_corners(uvv):
 def quad_get_opposite_corners_plus(uvv):
     n = len(uvv.uvverts_set)
     if n <= 1 or n >= 5:
-        return []
+        return {}
     neigh2 = set().union(*(n.uvverts_set for n in uvv.uvverts_set))
     if len(uvv.uvverts_set & neigh2) != 0:
         return {}
@@ -567,9 +572,6 @@ def quad_get_opposite_corners_plus(uvv):
             bd: {b, d}
         }
         cand = {k: v for k, v in cand.items() if k is not None}
-
-
-
         if len(cand) not in (2, 3, 4):
             return {}
         return cand
@@ -595,6 +597,9 @@ def rect_grid_bfs_dist(start):
 
 
 
+
+def quad_walk(uvq):
+    visited = set()
 
 
 
