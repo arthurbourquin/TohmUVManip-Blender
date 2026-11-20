@@ -88,8 +88,9 @@ class UvEdge:
 class UvQuad:
     def __init__(self, uvvs):
         assert len(uvvs) == 4, "Wrong uvv count for UvQuad"
-        self.uvverst_list = []
-        self.uvedges_list = []
+        self.uvverts_tupl = None
+        self.uvedges_tupl = None
+        self.key = frozenset(uvvs)
 
         a, x, y, z = uvvs
         d_ = {x, y, z} - a.uvverts_set
@@ -98,17 +99,28 @@ class UvQuad:
         # d - c
         # |   |
         # a - b
-        assert quad_get_opposite_corner(a, b, c) is d, "Wrong uvvs for UvQuad"
-        assert quad_get_opposite_corner(b, a, d) is c, "Wrong uvvs for UvQuad"
-        assert quad_get_opposite_corner(c, a, d) is b, "Wrong uvvs for UvQuad"
-        assert quad_get_opposite_corner(d, b, c) is a, "Wrong uvvs for UvQuad"
+        assert (
+            quad_get_opposite_corner(a, b, c) is d
+            and quad_get_opposite_corner(b, a, d) is c
+            and quad_get_opposite_corner(c, a, d) is b
+            and quad_get_opposite_corner(d, b, c) is a
+        ), "Wrong uvvs for UvQuad"
 
-        self.uvverts_list = [a, b, c, d]
-        self.uvedges_list.append(UvEdge(a, b))
-        self.uvedges_list.append(UvEdge(b, c))
-        self.uvedges_list.append(UvEdge(c, d))
-        self.uvedges_list.append(UvEdge(d, a))
+        self.uvverts_tupl = (a, b, c, d)
+        self.uvedges_tupl = (
+            UvEdge(a, b),
+            UvEdge(b, c),
+            UvEdge(c, d),
+            UvEdge(d, a)
+        )
 
+    def __hash__(self):
+        return hash(self.key)
+
+    def __eq__(self, other):
+        return (isinstance(other, UvQuad)
+            and other.key == self.key
+        )
 
 
 
@@ -123,7 +135,7 @@ class UvIsland:
 
         self.uvverts_set = None
         self.uvedges_set = None
-        self.uvquads_set = None
+        self.uvquads_set = set()
         self.sorted_uvverts = None
         self.sorted_uvedges = None
 
@@ -173,8 +185,8 @@ class UvIsland:
             # . . . .    1 2 3 4    1 2 3 4    2 4 6 8    0 1 2 3    1 1 1 1
             # Y . . B    2 3 4 5    0 1 2 3    2 4 6 8    0 1 2 3    2 2 2 2
             self.grid_width, self.grid_height, A, X, B, Y = grid_res
-            dA = grid_bfs_dist(A)
-            dY = grid_bfs_dist(Y)
+            dA = rect_grid_bfs_dist(A)
+            dY = rect_grid_bfs_dist(Y)
             for uvv in self.uvverts_set:
                 sum = dA[uvv] + dY[uvv]
                 uvv.x = (sum - (self.grid_height - 1)) // 2
@@ -186,7 +198,17 @@ class UvIsland:
 
         if self.is_quad_grid:
             self.is_knot_grid = is_knot_grid(self)
-                
+
+            for uvv in self.uvverts_set:
+                self.uvquads_set.update(
+                    UvQuad((uvv, a, o, b))
+                    for o, (a, b) in quad_get_opposite_corners_plus(uvv).items()
+                )
+
+
+
+
+            
 
     @property
     def degree(self): return max([len(uvv.uvverts_set) for uvv in self.uvverts_set], default=0)
@@ -343,9 +365,7 @@ class UvMesh:
 def order_pair(uvva, uvvb):
     au, av = uvva.uv
     bu, bv = uvvb.uv
-    if au == bu and av == bv:
-        raise AssertionError("Identical uvvert pair coordinates")
-        return
+    assert not (au == bu and av == bv), "Identical uvvert pair coordinates"
     if au != bu:
         if   au < bu: return (uvva, uvvb)
         elif au > bu: return (uvvb, uvva)
@@ -353,6 +373,7 @@ def order_pair(uvva, uvvb):
         if   av < bv: return (uvva, uvvb)
         elif av > bv: return (uvvb, uvva)
 
+    
 
 
 
@@ -525,7 +546,7 @@ def quad_get_opposite_corners_plus(uvv):
             bc: {b, c},
             ac: {a, c}
         }
-        cand = {k: v for k, v in cand if k is not None}
+        cand = {k: v for k, v in cand.items() if k is not None}
         if len(cand) != 2:
             return {}
         return cand
@@ -545,7 +566,7 @@ def quad_get_opposite_corners_plus(uvv):
             ac: {a, c},
             bd: {b, d}
         }
-        cand = {k: v for k, v in cand if k is not None}
+        cand = {k: v for k, v in cand.items() if k is not None}
 
 
 
@@ -560,7 +581,7 @@ def quad_get_opposite_corners_plus(uvv):
 
 
 
-def grid_bfs_dist(start):
+def rect_grid_bfs_dist(start):
     distances = {start: 0}
     q = deque([start])
     while q:
@@ -570,6 +591,11 @@ def grid_bfs_dist(start):
                 distances[nxt] = distances[cur] + 1
                 q.append(nxt)
     return distances
+
+
+
+
+
 
 
 
@@ -672,6 +698,19 @@ def grid_size(uvi):
 
 def is_rect_grid(uvi):
     return grid_size(uvi) is not None
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -893,6 +932,7 @@ def print_uvmesh(uvmesh):
         line += "|"
         line += f"{len(uvi.uvverts_set)} uvvs, "
         line += f"{len(uvi.uvedges_set)} uves, "
+        line += f"{len(uvi.uvquads_set)} uvqs, "
         line += f"{uvi.get_length():.3f} length"
         lines.append("• " + line)
 
