@@ -600,6 +600,7 @@ def rect_grid_bfs_dist(start):
 
 def quad_walk(uvq):
     visited = set()
+    # WIP
 
 
 
