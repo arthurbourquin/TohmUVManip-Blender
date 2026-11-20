@@ -27,7 +27,7 @@ from . import utils
 
 # MARK: - UvVert
 
-class UVVert:
+class UvVert:
     def __init__(self, uvmap):
         self.uvmap = uvmap
         self.index = None
@@ -59,13 +59,22 @@ class UVVert:
 
 # MARK: - UvEdge
 
-class UVEdge:
+class UvEdge:
     def __init__(self, uvv1, uvv2):
         self.index = None
-        self.uvv1 = uvv1
-        self.uvv2 = uvv2
+        self.uvv1, self.uvv2 = order_pair(uvv1, uvv2)
         self.select = None
         self.uvedges_set = set()
+
+    def __hash__(self):
+        return hash((self.uvv1, self.uvv2))
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, UvEdge)
+            and self.uvv1 is other.uvv1
+            and self.uvv2 is other.uvv2
+    )
 
     def get_length(self):
         du = self.uvv2.uv.x - self.uvv1.uv.x
@@ -74,15 +83,47 @@ class UVEdge:
 
 
 
+# MARK: - UvQuad
+
+class UvQuad:
+    def __init__(self, uvvs):
+        assert len(uvvs) == 4, "Wrong uvv count for UvQuad"
+        self.uvverst_list = []
+        self.uvedges_list = []
+
+        a, x, y, z = uvvs
+        d_ = {x, y, z} - a.uvverts_set
+        d = next(iter(d_))
+        b, c = {x, y, z} - d_
+        # d - c
+        # |   |
+        # a - b
+        assert quad_get_opposite_corner(a, b, c) is d, "Wrong uvvs for UvQuad"
+        assert quad_get_opposite_corner(b, a, d) is c, "Wrong uvvs for UvQuad"
+        assert quad_get_opposite_corner(c, a, d) is b, "Wrong uvvs for UvQuad"
+        assert quad_get_opposite_corner(d, b, c) is a, "Wrong uvvs for UvQuad"
+
+        self.uvverts_list = [a, b, c, d]
+        self.uvedges_list.append(UvEdge(a, b))
+        self.uvedges_list.append(UvEdge(b, c))
+        self.uvedges_list.append(UvEdge(c, d))
+        self.uvedges_list.append(UvEdge(d, a))
+
+
+
+
+
+
 # MARK: - UvIsland
 
-class UVIsland:
+class UvIsland:
     def __init__(self, uvverts=None, uvedges=None):
         uvverts = uvverts if uvverts is not None else set()
         uvedges = uvedges if uvedges is not None else set()
 
         self.uvverts_set = None
         self.uvedges_set = None
+        self.uvquads_set = None
         self.sorted_uvverts = None
         self.sorted_uvedges = None
 
@@ -94,6 +135,7 @@ class UVIsland:
         self.is_ring = None
         self.is_quad_grid = None
         self.is_rect_grid = None
+        self.is_knot_grid = None
 
         self.grid_width = None
         self.grid_height = None
@@ -142,6 +184,10 @@ class UVIsland:
         if self.is_quad_grid is None:
             self.is_quad_grid = is_quad_grid(self)
 
+        if self.is_quad_grid:
+            self.is_knot_grid = is_knot_grid(self)
+                
+
     @property
     def degree(self): return max([len(uvv.uvverts_set) for uvv in self.uvverts_set], default=0)
 
@@ -166,7 +212,7 @@ class UvMesh:
         self.precision = 5
         self.epsilon = 10 ** -self.precision
 
-        self.uvisland_list = []
+        self.uvislands_list = []
 
         # SNAP LOOPS (why? why not? idk...) -> need cluterization somehow
         for f in bm.faces:
@@ -183,7 +229,7 @@ class UvMesh:
             for l in f.loops:
                 uv = tuple(l[self.uvmap].uv)
                 if uv not in uvvert_dict:
-                    uvvert_dict[uv] = UVVert(self.uvmap)
+                    uvvert_dict[uv] = UvVert(self.uvmap)
                 uvvert_dict[uv].loops_list.append(l)
         for i, uvv in enumerate(uvvert_dict.values()):
             uvv.index = i
@@ -198,7 +244,7 @@ class UvMesh:
                 uvv_pair = order_pair(uvva, uvvb)
                 if not uvv_pair in uvedge_dict:
                     uvv1, uvv2 = uvv_pair
-                    uvedge_dict[uvv_pair] = UVEdge(uvv1, uvv2)
+                    uvedge_dict[uvv_pair] = UvEdge(uvv1, uvv2)
         for i, uve in enumerate(uvedge_dict.values()):
             uve.index = i
 
@@ -279,7 +325,7 @@ class UvMesh:
                     stack.append((nxt, depth + 1))
             uvverts_left -= uvi
 
-        self.uvisland_list = [UVIsland(uvverts=uvvs) for uvvs in uvis_uvvert_lists]
+        self.uvislands_list = [UvIsland(uvverts=uvvs) for uvvs in uvis_uvvert_lists]
 
 
 
@@ -397,7 +443,7 @@ def rotate(uvvs, angle, center):
 def has_triangle(uvi):
     for uvv1 in uvi.uvverts_set:
         for uvv2 in uvv1.uvverts_set:
-            if uvv1 is uvv2:
+            if uvv1 is uvv2: # useless I think...
                 continue
             if len(uvv1.uvverts_set & uvv2.uvverts_set) != 0:
                 return True
@@ -410,13 +456,15 @@ def has_triangle(uvi):
 def quad_get_opposite_corner(o, a, b):
     try:
         ab = a.uvverts_set & b.uvverts_set
-        seto = set([o])
-        opp = ab - seto
+        opp = ab - set([o])
         assert len(opp) == 1
         return next(iter(opp))
     except:
         return None
 
+
+# can recieve non quad uvv
+# must return [] to signify fail
 def quad_get_opposite_corners(uvv):
     n = len(uvv.uvverts_set)
     if n <= 1 or n >= 5:
@@ -452,8 +500,58 @@ def quad_get_opposite_corners(uvv):
         return cand
 
 
+# can recieve non quad uvv
+# must return {} to signify fail
+def quad_get_opposite_corners_plus(uvv):
+    n = len(uvv.uvverts_set)
+    if n <= 1 or n >= 5:
+        return []
+    neigh2 = set().union(*(n.uvverts_set for n in uvv.uvverts_set))
+    if len(uvv.uvverts_set & neigh2) != 0:
+        return {}
+    if n == 2:
+        a, b = uvv.uvverts_set
+        c = quad_get_opposite_corner(uvv, a, b)
+        if not c:
+            return {}
+        return {c: {a, b}}
+    if n == 3:
+        a, b, c = uvv.uvverts_set
+        ab = quad_get_opposite_corner(uvv, a, b)
+        bc = quad_get_opposite_corner(uvv, b, c)
+        ac = quad_get_opposite_corner(uvv, a, c)
+        cand = {
+            ab: {a, b},
+            bc: {b, c},
+            ac: {a, c}
+        }
+        cand = {k: v for k, v in cand if k is not None}
+        if len(cand) != 2:
+            return {}
+        return cand
+    if n == 4:
+        a, b, c, d = uvv.uvverts_set
+        ab = quad_get_opposite_corner(uvv, a, b)
+        bc = quad_get_opposite_corner(uvv, b, c)
+        cd = quad_get_opposite_corner(uvv, c, d)
+        da = quad_get_opposite_corner(uvv, d, a)
+        ac = quad_get_opposite_corner(uvv, a, c)
+        bd = quad_get_opposite_corner(uvv, b, d)
+        cand = {
+            ab: {a, b},
+            bc: {b, c},
+            cd: {c, d},
+            da: {d, a},
+            ac: {a, c},
+            bd: {b, d}
+        }
+        cand = {k: v for k, v in cand if k is not None}
 
 
+
+        if len(cand) not in (2, 3, 4):
+            return {}
+        return cand
 
 
 
@@ -472,6 +570,11 @@ def grid_bfs_dist(start):
                 distances[nxt] = distances[cur] + 1
                 q.append(nxt)
     return distances
+
+
+
+
+
 
 
 
@@ -507,6 +610,16 @@ def is_quad_grid(uvi):
             if c not in (2, 3, 4):
                 return False
     return True
+
+
+def is_knot_grid(uvi):
+    assert uvi.is_quad_grid, "Must first evaluate if is quad grid"
+    star4 = [uvv for uvv in uvi.uvverts_set if len(uvv.uvverts_set) == 4]
+    for uvv in star4:
+        if len(quad_get_opposite_corners(uvv)) == 2:
+            return True
+    return False
+
 
 
 def grid_size(uvi):
@@ -576,7 +689,7 @@ def reverse_path(uvi):
         uvi.head, uvi.tail = (uvi.tail, uvi.head)
 
 def reverse_paths(uvmesh):
-    for uvi in uvmesh.uvisland_list:
+    for uvi in uvmesh.uvislands_list:
         reverse_path(uvi)
 
 
@@ -625,7 +738,7 @@ def straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode
             uvv.move(uv)
 
 def straighten_paths(uvmesh, keep_paths_length, even_point_distribution, center_mode):
-    for uvi in uvmesh.uvisland_list:
+    for uvi in uvmesh.uvislands_list:
         straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode)
 
 
@@ -639,7 +752,7 @@ def straighten_paths(uvmesh, keep_paths_length, even_point_distribution, center_
 
 def align_paths(uvmesh):
     # Assert paths are straight
-    paths = [uvi for uvi in uvmesh.uvisland_list if uvi.is_path]
+    paths = [uvi for uvi in uvmesh.uvislands_list if uvi.is_path]
     angles = [uvvs_angle(p.head, p.tail) for p in paths]
     # Mean undirected angle
     c = sum(cos(2 * a) for a in angles)
@@ -661,7 +774,7 @@ def align_paths(uvmesh):
 
 
 def align_paths_on_grid(uvmesh):
-    paths = [uvi for uvi in uvmesh.uvisland_list if uvi.is_path]
+    paths = [uvi for uvi in uvmesh.uvislands_list if uvi.is_path]
     if len(paths) <= 1:
         utils.alert(f"Need at least 2 paths, found {len(paths)}")
         return
@@ -748,7 +861,7 @@ def align_grid(uvi):
             uvv.move(uv)
 
 def align_grids(uvmesh):
-    for uvi in uvmesh.uvisland_list:
+    for uvi in uvmesh.uvislands_list:
         align_grid(uvi)
 
 
@@ -768,37 +881,21 @@ def print_uvmesh(uvmesh):
     lines = []
     from datetime import datetime
 
-    paths = set([uvi for uvi in uvmesh.uvisland_list if uvi.is_path])
-    rings = set([uvi for uvi in uvmesh.uvisland_list if uvi.is_ring])
-    quad_grids = set([uvi for uvi in uvmesh.uvisland_list if uvi.is_quad_grid])
-    rect_grids = set([uvi for uvi in uvmesh.uvisland_list if uvi.is_rect_grid])
+    for uvi in uvmesh.uvislands_list:
+        line = ""
+        if uvi.is_path: line += "path, "
+        if uvi.is_ring: line += "ring, "
+        if uvi.is_quad_grid: line += "quad "
+        if uvi.is_knot_grid: line += "knot "
+        if uvi.is_rect_grid: line += "rectangle "
+        if any([uvi.is_quad_grid, uvi.is_knot_grid,uvi.is_rect_grid]): line += "grid, "
+        if line == "": line += "other, "
+        line += "|"
+        line += f"{len(uvi.uvverts_set)} uvvs, "
+        line += f"{len(uvi.uvedges_set)} uves, "
+        line += f"{uvi.get_length():.3f} length"
+        lines.append("• " + line)
 
-    d_paths = paths - rings
-    d_rings = rings
-    d_quad_grids = quad_grids - rect_grids
-    d_rect_grids = rect_grids
-
-    others = set(uvmesh.uvisland_list) - (d_paths | d_rings | d_quad_grids | d_rect_grids)
-    lines.append(f"{len(uvmesh.uvisland_list)} islands")
-    if d_paths:
-        counts_ = [len(uvi.uvverts_set) for uvi in d_paths]
-        counts = ", ".join([str(n) for n in counts_])
-        lines.append(f"• {len(d_paths)} path(s): {counts}")
-    if d_rings:
-        counts_ = [len(uvi.uvverts_set) for uvi in d_rings]
-        counts = ", ".join([str(n) for n in counts_])
-        lines.append(f"• {len(d_rings)} ring(s): {counts}")
-    if d_quad_grids:
-        counts_ = [len(uvi.uvverts_set) for uvi in d_quad_grids]
-        counts = ", ".join([str(n) for n in counts_])
-        lines.append(f"• {len(d_quad_grids)} quad grid(s): {counts}")
-    if d_rect_grids:
-        dims = ", ".join([f"{uvi.grid_width}x{uvi.grid_height}" for uvi in d_rect_grids])
-        lines.append(f"• {len(d_rect_grids)} rectangle grid(s): {dims}")
-    if others:
-        counts_ = [len(uvi.uvverts_set) for uvi in others]
-        counts = ", ".join([str(n) for n in counts_])
-        lines.append(f"• {len(others)} other(s): {counts}")
 
     print("\n".join(lines))
     return lines
