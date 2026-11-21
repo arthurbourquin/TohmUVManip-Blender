@@ -213,10 +213,22 @@ class OBJECT_OT_AlignGrids(bpy.types.Operator):
     bl_label = "Align Grid"
     bl_options = {"REGISTER", "UNDO"}
 
+    mode: bpy.props.EnumProperty(
+        name="Mode",
+        items=[
+            ('CORNERS', "Corners", "Use the four corners"),
+            ('BBOX', "Bounding Box", "Use bounding box"),
+        ],
+        default='CORNERS'
+    )
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
     def execute(self, context):
         [obj, mesh, bm, uvmap] = utils.get_bmesh_stuff()
         if not obj: return {'CANCELLED'}
         uvmesh = UvGraph.UvMesh(obj, mesh, bm, uvmap)
-        UvGraph.align_grids(uvmesh)
+        UvGraph.align_grids(uvmesh, self.mode)
         bmesh.update_edit_mesh(mesh)
         return {"FINISHED"}

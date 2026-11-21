@@ -92,11 +92,6 @@ class UvQuad:
         self.uvedges_tupl = None
         self.i = None
         self.j = None
-        # adjascent UvQuads
-        self.top    = None
-        self.right  = None
-        self.bottom = None
-        self.left   = None
         self.key = frozenset(uvvs)
 
         a, x, y, z = uvvs
@@ -600,27 +595,6 @@ def rect_grid_bfs_dist(start):
 
 
 
-def rearrange_quad_verts(uvi):
-    visited_uvqs = set()
-    first_uvq = next(iter(uvi.uvquads_set))
-    stack = [first_uvq]
-    tl, tr, br, bl = first_uvq.uvverts
-    while stack:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -904,21 +878,29 @@ def align_paths_on_grid(uvmesh):
 
 
 
-def align_grid(uvi):
+def align_grid(uvi, mode="CORNERS"):
     grid_res = grid_size(uvi)
     if grid_res:
         m, n, A, X, B, Y = grid_res
-        tl, tr, br, bl = A.uv.copy(), X.uv.copy(), B.uv.copy(), Y.uv.copy()
+        if mode == "CORNERS":
+            tl, tr, br, bl = A.uv.copy(), X.uv.copy(), B.uv.copy(), Y.uv.copy()
+        elif mode == "BBOX":
+            [[mu, mv], [Mu, Mv]] = get_bounding_box(uvi.uvverts_set)
+            tl = Vector((mu, Mv))
+            tr = Vector((Mu, Mv))
+            br = Vector((Mu, mv))
+            bl = Vector((mu, mv))
+        else:
+            raise RuntimeError(f"Unknown mode in align grid: {mode}")
         for uvv in uvi.uvverts_set:
             wx = uvv.x / (m - 1)
             wy = 1 - uvv.y / (n - 1)
             uv = bilinear(tl, tr, br, bl, wx, wy)
-            tmp = Vector((uvv.x, uvv.y)) / 10
             uvv.move(uv)
 
-def align_grids(uvmesh):
+def align_grids(uvmesh, mode="CORNERS"):
     for uvi in uvmesh.uvislands_list:
-        align_grid(uvi)
+        align_grid(uvi, mode)
 
 
 
