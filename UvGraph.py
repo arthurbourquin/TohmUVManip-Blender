@@ -599,10 +599,17 @@ def rect_grid_bfs_dist(start):
 
 
 
+def star4_walk(uvi):
+    visited = set()
+    first = next(iter(uvi.uvverts_set))
+    stack = [first]
+    first.i = first.j = 0
+    toribole = [None, None, None, None]
+    while stack:
+        cur = stack.pop()
+        to, ri, bo, le = toribole
+        
 
-def quad_walk(uvi): # WIP
-    for uvq in uvi.uvquads_set:
-        uvq.i = uvq.j = None
 
 
 
