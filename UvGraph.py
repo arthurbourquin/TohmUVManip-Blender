@@ -90,6 +90,8 @@ class UvQuad:
         assert len(uvvs) == 4, "Wrong uvv count for UvQuad"
         self.uvverts_tupl = None
         self.uvedges_tupl = None
+        self.i = None
+        self.j = None
         # adjascent UvQuads
         self.top    = None
         self.right  = None
@@ -598,9 +600,10 @@ def rect_grid_bfs_dist(start):
 
 
 
-def quad_walk(uvq):
-    visited = set()
-    # WIP
+def quad_walk(uvi): # WIP
+    for uvq in uvi.uvquads_set:
+        uvq.i = uvq.j = None
+
 
 
 
