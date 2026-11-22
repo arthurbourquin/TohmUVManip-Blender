@@ -226,7 +226,7 @@ class UvMesh:
         self.uvislands: list["UvIsland"] = []
 
         # SNAP LOOPS (why? why not? idk...) -> need cluterization somehow
-        clusterize_loops(bm, uvmap, self.epsilon)
+        clusterize_loops2(bm, uvmap, self.epsilon)
         for f in bm.faces:
             for l in f.loops:
                 u, v = l[self.uvmap].uv
@@ -382,11 +382,11 @@ def clusterize_loops(bm, uvmap, epsilon):
                 for coord in near_coords:
                     clusters_co_id[coord] = cid
                 break
-    clustersid_id_co = {cid: set() for cid in clusters_co_id.values()}
+    clusters_id_co = {cid: set() for cid in clusters_co_id.values()}
     for coord, cid in clusters_co_id.items():
-        clustersid_id_co[cid].add(coord)
+        clusters_id_co[cid].add(coord)
     eps2 = epsilon * epsilon
-    for cid, coords in clustersid_id_co.items():
+    for cid, coords in clusters_id_co.items():
         for coord_1 in coords:
             for coord_2 in cos:
                 if coord_1 == coord_2:
@@ -399,38 +399,35 @@ def clusterize_loops(bm, uvmap, epsilon):
                     raise RuntimeError(error_message)
     print("Ok so far")
     clusters = dict() # { average coordinate : loops }
-    for cid, coord in clustersid_id_co.items():
+    for cid, coord in clusters_id_co.items():
         a = 1
 
 
-def clusterize_loop2(bm, uvmap, epsilon): # WIP
-    loops = {l for f in bm.faces for l in f.loops}
+def clusterize_loops2(bm, uvmap, epsilon):
+    loops = sorted([l for f in bm.faces for l in f.loops], key=lambda l: l.index)
     kd = KDTree(len(loops))
-    for i, l in enumerate(loops):
+    for l in loops:
         u, v = l[uvmap].uv
         coord = (u, v, 0)
-        kd.insert(coord, i)
+        kd.insert(coord, l.index)
     kd.balance()
-    clusters_co_id = dict() # { cordinate : cluster id }
-    security = len(uvs)
-    while uvs:
+    clusters_co_id = dict() # { loop : cluster id }
+    security = len(loops)
+    while loops:
         security -= 1
         if security < 0:
             raise RuntimeError("Infinite loop?")
-        coord = uvs.pop()
+        loop = loops.pop()
+        u, v = loop[uvmap].uv
+        coord = (u, v, 0)
         res = kd.find_range(coord, epsilon)
-        near_coords = [tuple(coord) for coord, idx, dst in res]
-        for near_coord in near_coords:
-            if near_coord in clusters_co_id.keys():
-                cid = clusters_co_id[near_coord]
-                for coord in near_coords:
-                    clusters_co_id[coord] = cid
-                break
-    clustersid_id_co = {cid: set() for cid in clusters_co_id.values()}
+        for pos, idx, dst in res:
+            a = 1 # WIP WIP WIP
+    clusters_id_co = {cid: set() for cid in clusters_co_id.values()}
     for coord, cid in clusters_co_id.items():
-        clustersid_id_co[cid].add(coord)
+        clusters_id_co[cid].add(coord)
     eps2 = epsilon * epsilon
-    for cid, coords in clustersid_id_co.items():
+    for cid, coords in clusters_id_co.items():
         for coord_1 in coords:
             for coord_2 in cos:
                 if coord_1 == coord_2:
@@ -443,7 +440,7 @@ def clusterize_loop2(bm, uvmap, epsilon): # WIP
                     raise RuntimeError(error_message)
     print("Ok so far")
     clusters = dict() # { average coordinate : loops }
-    for cid, coord in clustersid_id_co.items():
+    for cid, coord in clusters_id_co.items():
         a = 1
 
 
