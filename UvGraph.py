@@ -1,10 +1,12 @@
 # python
+from __future__ import annotations
 from math import sqrt, sin, cos, atan2, pi
 from collections import deque
 
 # Blender
 import bmesh
 from mathutils import Vector, Matrix
+from mathutils.kdtree import KDTree
 
 # Tohm UV Manip
 from . import utils
@@ -40,8 +42,8 @@ class UvVert:
         self.j = None
 
         self.loops_list = []
-        self.uvverts_set = set()
-        self.uvedges_set = set()
+        self.uvverts: set["UvVert"] = set()
+        self.uvedges: set["UvEdge"] = set()
 
     @property
     def uv(self): return self.loops_list[0][self.uvmap].uv if self.loops_list else (None, None)
@@ -49,10 +51,6 @@ class UvVert:
     def u(self): return self.uv.x
     @property
     def v(self): return self.uv.y
-
-    def move(self, uv): # need bmesh.update_edit_mesh(mesh) after
-        for l in self.loops_list:
-            l[self.uvmap].uv = uv
         
 
 
@@ -62,9 +60,12 @@ class UvVert:
 class UvEdge:
     def __init__(self, uvv1, uvv2):
         self.index = None
-        self.uvv1, self.uvv2 = order_pair(uvv1, uvv2)
+        self.uvv1: UvVert
+        self.uvv2: UvVert
         self.select = None
-        self.uvedges_set = set()
+        self.uvedges: set["UvEdge"] = set()
+
+        self.uvv1, self.uvv2 = order_pair(uvv1, uvv2)
 
     def __hash__(self):
         return hash((self.uvv1, self.uvv2))
@@ -76,10 +77,6 @@ class UvEdge:
             and self.uvv2 is other.uvv2
     )
 
-    def get_length(self):
-        du = self.uvv2.uv.x - self.uvv1.uv.x
-        dv = self.uvv2.uv.y - self.uvv1.uv.y
-        return sqrt(du*du + dv*dv)
 
 
 
@@ -87,34 +84,31 @@ class UvEdge:
 
 class UvQuad:
     def __init__(self, uvvs):
-        assert len(uvvs) == 4, "Wrong uvv count for UvQuad"
-        self.uvverts_tupl = None
-        self.uvedges_tupl = None
+        self.uvverts: list["UvVert"]
+        self.uvedges: list["UvEdge"]
         self.i = None
         self.j = None
         self.key = frozenset(uvvs)
 
-        a, x, y, z = uvvs
-        d_ = {x, y, z} - a.uvverts_set
-        d = next(iter(d_))
-        b, c = {x, y, z} - d_
-        # d - c
-        # |   |
-        # a - b
-        assert (
-            quad_get_opposite_corner(a, b, c) is d
-            and quad_get_opposite_corner(b, a, d) is c
-            and quad_get_opposite_corner(c, a, d) is b
-            and quad_get_opposite_corner(d, b, c) is a
-        ), "Wrong uvvs for UvQuad"
+        assert len(uvvs) == 4
+        a = next(iter(uvvs))
+        d = [uvv for uvv in uvvs if uvv is not a and uvv not in a.uvverts][0]
+        b, c = [uvv for uvv in uvvs if uvv is not a and uvv is not d]
+        assert b in a.uvverts
+        assert d in b.uvverts
+        assert c in d.uvverts
+        assert a in c.uvverts
 
-        self.uvverts_tupl = (a, b, c, d)
-        self.uvedges_tupl = (
+        # a - b
+        # |   |
+        # c - d
+        self.uvverts = [a, b, d, c]
+        self.uvedges = [
             UvEdge(a, b),
-            UvEdge(b, c),
-            UvEdge(c, d),
-            UvEdge(d, a)
-        )
+            UvEdge(b, d),
+            UvEdge(d, c),
+            UvEdge(c, a)
+        ]
 
     def __hash__(self):
         return hash(self.key)
@@ -135,11 +129,11 @@ class UvIsland:
         uvverts = uvverts if uvverts is not None else set()
         uvedges = uvedges if uvedges is not None else set()
 
-        self.uvverts_set = None
-        self.uvedges_set = None
-        self.uvquads_set = set()
-        self.sorted_uvverts = None
-        self.sorted_uvedges = None
+        self.uvverts: set["UvVert"]
+        self.uvedges: set["UvEdge"]
+        self.uvquads: set["UvQuad"] = set()
+        self.sorted_uvverts: list["UvVert"]
+        self.sorted_uvedges: list["UvEdge"]
 
         self.root = None
         self.head = None
@@ -154,28 +148,30 @@ class UvIsland:
         self.grid_width = None
         self.grid_height = None
 
-        self.uvedges_set = set(uvedges)
-        for uve in self.uvedges_set:
-            self.uvverts_set.add(uve.uvv1)
-            self.uvverts_set.add(uve.uvv2)
+        self.uvedges = set(uvedges)
+        for uve in self.uvedges:
+            self.uvverts.add(uve.uvv1)
+            self.uvverts.add(uve.uvv2)
 
-        self.uvverts_set = set(uvverts)
-        for uvv in self.uvverts_set:
-            self.uvedges_set.update(uvv.uvedges_set)
+        self.uvverts = set(uvverts)
+        for uvv in self.uvverts:
+            self.uvedges.update(uvv.uvedges)
 
-        self.is_path = len(self.get_leaves()) == 2 and self.degree <= 2
-        self.is_ring = len(self.get_leaves()) == 0 and self.degree == 2
+        leaves_len = len([uvv for uvv in self.uvverts if len(uvv.uvverts) == 1])
+        degree = self.degree
+        self.is_path = leaves_len == 2 and degree <= 2
+        self.is_ring = leaves_len == 0 and degree == 2
 
         if self.is_path:
-            leaves = [uvv for uvv in self.uvverts_set if len(uvv.uvverts_set) == 1]
+            leaves = [uvv for uvv in self.uvverts if len(uvv.uvverts) == 1]
             self.head, self.tail = sorted(leaves, key=lambda uvv: uvv.depth)
 
-            self.sorted_uvverts = sorted(self.uvverts_set, key=lambda uvv: uvv.depth)
+            self.sorted_uvverts = sorted(self.uvverts, key=lambda uvv: uvv.depth)
 
             self.sorted_uvedges = []
             for i in range(len(self.sorted_uvverts) - 1):
                 uvv1, uvv2 = order_pair(self.sorted_uvverts[i], self.sorted_uvverts[i + 1])
-                uve = next((uve for uve in self.uvedges_set if uve.uvv1 == uvv1 and uve.uvv2 == uvv2), None)
+                uve = next((uve for uve in self.uvedges if uve.uvv1 == uvv1 and uve.uvv2 == uvv2), None)
                 assert uve is not None, "No uvedge found in island"
                 self.sorted_uvedges.append(uve)
 
@@ -189,11 +185,11 @@ class UvIsland:
             self.grid_width, self.grid_height, A, X, B, Y = grid_res
             dA = rect_grid_bfs_dist(A)
             dY = rect_grid_bfs_dist(Y)
-            for uvv in self.uvverts_set:
+            for uvv in self.uvverts:
                 sum = dA[uvv] + dY[uvv]
                 uvv.x = (sum - (self.grid_height - 1)) // 2
                 uvv.y = dA[uvv] - uvv.x
-            self.sorted_uvverts = sorted(self.uvverts_set, key=lambda uvv: (uvv.x, uvv.y))
+            self.sorted_uvverts = sorted(self.uvverts, key=lambda uvv: (uvv.x, uvv.y))
 
         if self.is_quad_grid is None:
             self.is_quad_grid = is_quad_grid(self)
@@ -201,24 +197,15 @@ class UvIsland:
         if self.is_quad_grid:
             self.is_knot_grid = is_knot_grid(self)
 
-        for uvv in self.uvverts_set:
-            self.uvquads_set.update(
+        for uvv in self.uvverts:
+            self.uvquads.update(
                 UvQuad((uvv, a, o, b))
                 for o, (a, b) in quad_get_opposite_corners_plus(uvv).items()
             )
 
-
-
-
-            
-
     @property
-    def degree(self): return max([len(uvv.uvverts_set) for uvv in self.uvverts_set], default=0)
+    def degree(self): return max([len(uvv.uvverts) for uvv in self.uvverts], default=0)
 
-    def get_length(self): return sum([uve.get_length() for uve in self.uvedges_set])
-
-    def get_leaves(self):
-        return [uvv for uvv in self.uvverts_set if len(uvv.uvverts_set) == 1]
 
 
 
@@ -236,7 +223,7 @@ class UvMesh:
         self.precision = 5
         self.epsilon = 10 ** -self.precision
 
-        self.uvislands_list = []
+        self.uvislands: list["UvIsland"] = []
 
         # SNAP LOOPS (why? why not? idk...) -> need cluterization somehow
         for f in bm.faces:
@@ -298,26 +285,26 @@ class UvMesh:
 
         # LINK
         for uve in selected_uvedge_dict.values():
-            uve.uvv1.uvverts_set.add(uve.uvv2)
-            uve.uvv2.uvverts_set.add(uve.uvv1)
-            uve.uvv1.uvedges_set.add(uve)
-            uve.uvv2.uvedges_set.add(uve)
+            uve.uvv1.uvverts.add(uve.uvv2)
+            uve.uvv2.uvverts.add(uve.uvv1)
+            uve.uvv1.uvedges.add(uve)
+            uve.uvv2.uvedges.add(uve)
         for uvv in selected_uvvert_dict.values():
-            for uvea in uvv.uvedges_set:
-                for uveb in uvv.uvedges_set:
+            for uvea in uvv.uvedges:
+                for uveb in uvv.uvedges:
                     if uvea is not uveb:
-                        uvea.uvedges_set.add(uveb)
+                        uvea.uvedges.add(uveb)
 
 
         # CREATE ISLANDS
 
-        uvis_uvvert_lists = []
+        uvvert_lists = []
 
         # with leaf islands
-        leaves = set([uvv for uvv in selected_uvvert_dict.values() if len(uvv.uvverts_set) == 1])
+        leaves = set([uvv for uvv in selected_uvvert_dict.values() if len(uvv.uvverts) == 1])
         while leaves:
             uvi = set()
-            uvis_uvvert_lists.append(uvi)
+            uvvert_lists.append(uvi)
             root = leaves.pop()
             stack = [(root, 0)]
             while stack:
@@ -327,7 +314,7 @@ class UvMesh:
                 cur_uvv.depth = depth
                 cur_uvv.isvisited = True
                 uvi.add(cur_uvv)
-                for nxt in cur_uvv.uvverts_set:
+                for nxt in cur_uvv.uvverts:
                     stack.append((nxt, depth + 1))
             leaves -= uvi
 
@@ -335,7 +322,7 @@ class UvMesh:
         uvverts_left = set([uvv for uvv in selected_uvvert_dict.values() if not uvv.isvisited])
         while uvverts_left:
             uvi = set()
-            uvis_uvvert_lists.append(uvi)
+            uvvert_lists.append(uvi)
             root = uvverts_left.pop()
             stack = [(root, 0)]
             while stack:
@@ -345,11 +332,11 @@ class UvMesh:
                 cur_uvv.depth = depth
                 cur_uvv.isvisited = True
                 uvi.add(cur_uvv)
-                for nxt in cur_uvv.uvverts_set:
+                for nxt in cur_uvv.uvverts:
                     stack.append((nxt, depth + 1))
             uvverts_left -= uvi
 
-        self.uvislands_list = [UvIsland(uvverts=uvvs) for uvvs in uvis_uvvert_lists]
+        self.uvislands = [UvIsland(uvverts=uvvs) for uvvs in uvvert_lists]
 
 
 
@@ -364,6 +351,25 @@ class UvMesh:
 # MARK: - UTILITY
 #=========#=========#=========#=========#=========#=========#=========#=========
 
+
+def clusterize_loops(bm, uvmap, epsilon):
+    loops = [l for f in bm.faces for l in f.loops]
+    kd = KDTree(len(loops))
+    for i, l in enumerate(loops):
+        kd.insert(l[uvmap].uv, i)
+    kd.balance()
+    stack = set(loops)
+    clusters = []
+    """
+    while stack:
+        cur = stack.pop()
+        uv = cur[uvmap].uv
+        res = kd.find(uv)
+        for pos, idx, dst in res:
+    """
+
+
+
 def order_pair(uvva, uvvb):
     au, av = uvva.uv
     bu, bv = uvvb.uv
@@ -374,16 +380,6 @@ def order_pair(uvva, uvvb):
     else:
         if   av < bv: return (uvva, uvvb)
         elif av > bv: return (uvvb, uvva)
-
-    
-
-
-
-
-
-
-
-
 
 def lerp(a, b, w):
     return a * (1 - w) + b * w
@@ -407,7 +403,7 @@ def get_bounding_box(uvvs):
     return [[min(us), min(vs)], [max(us), max(vs)]]
 
 def get_center(uvi, mode):
-    uvvs = list(uvi.uvverts_set)
+    uvvs = list(uvi.uvverts)
     if mode == "BBOX":
         [[mu, mv], [Mu, Mv]] = get_bounding_box(uvvs)
         uv = ((mu + Mu) / 2, (mv + Mv) / 2)
@@ -433,71 +429,36 @@ def get_center(uvi, mode):
         print(f"Unknown center mode: {mode}")
         return None
 
-
-
-
-
-
-
-
-
-
-def rotate(uvvs, angle, center):
-    M = Matrix.Rotation(angle, 2)
-    center = Vector(center)
-    for uvv in uvvs:
-        uv = M @ (uvv.uv - center) + center
-        for l in uvv.loops_list:
-            l[uvv.uvmap].uv = uv
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def has_triangle(uvi):
-    for uvv1 in uvi.uvverts_set:
-        for uvv2 in uvv1.uvverts_set:
+    for uvv1 in uvi.uvverts:
+        for uvv2 in uvv1.uvverts:
             if uvv1 is uvv2: # useless I think...
                 continue
-            if len(uvv1.uvverts_set & uvv2.uvverts_set) != 0:
+            if len(uvv1.uvverts & uvv2.uvverts) != 0:
                 return True
     return False
 
-
-
-
-
 def quad_get_opposite_corner(o, a, b):
     try:
-        ab = a.uvverts_set & b.uvverts_set
+        ab = a.uvverts & b.uvverts
         opp = ab - set([o])
         assert len(opp) == 1
         return next(iter(opp))
     except:
         return None
 
-
 # can recieve non quad uvv
 # must return [] to signify fail
 def quad_get_opposite_corners(uvv):
-    n = len(uvv.uvverts_set)
+    n = len(uvv.uvverts)
     if n <= 1 or n >= 5:
         return []
     if n == 2:
-        a, b = uvv.uvverts_set
+        a, b = uvv.uvverts
         c = quad_get_opposite_corner(uvv, a, b)
         return [c] if c is not None else []
     if n == 3:
-        a, b, c = uvv.uvverts_set
+        a, b, c = uvv.uvverts
         ab = quad_get_opposite_corner(uvv, a, b)
         bc = quad_get_opposite_corner(uvv, b, c)
         ac = quad_get_opposite_corner(uvv, a, c)
@@ -508,7 +469,7 @@ def quad_get_opposite_corners(uvv):
             return []
         return cand
     if n == 4:
-        a, b, c, d = uvv.uvverts_set
+        a, b, c, d = uvv.uvverts
         ab = quad_get_opposite_corner(uvv, a, b)
         bc = quad_get_opposite_corner(uvv, b, c)
         cd = quad_get_opposite_corner(uvv, c, d)
@@ -522,24 +483,23 @@ def quad_get_opposite_corners(uvv):
             return []
         return cand
 
-
 # can recieve non quad uvv
 # must return {} to signify fail
 def quad_get_opposite_corners_plus(uvv):
-    n = len(uvv.uvverts_set)
+    n = len(uvv.uvverts)
     if n <= 1 or n >= 5:
         return {}
-    neigh2 = set().union(*(n.uvverts_set for n in uvv.uvverts_set))
-    if len(uvv.uvverts_set & neigh2) != 0:
+    neigh2 = set().union(*(n.uvverts for n in uvv.uvverts))
+    if len(uvv.uvverts & neigh2) != 0:
         return {}
     if n == 2:
-        a, b = uvv.uvverts_set
+        a, b = uvv.uvverts
         c = quad_get_opposite_corner(uvv, a, b)
         if not c:
             return {}
         return {c: {a, b}}
     if n == 3:
-        a, b, c = uvv.uvverts_set
+        a, b, c = uvv.uvverts
         ab = quad_get_opposite_corner(uvv, a, b)
         bc = quad_get_opposite_corner(uvv, b, c)
         ac = quad_get_opposite_corner(uvv, a, c)
@@ -553,7 +513,7 @@ def quad_get_opposite_corners_plus(uvv):
             return {}
         return cand
     if n == 4:
-        a, b, c, d = uvv.uvverts_set
+        a, b, c, d = uvv.uvverts
         ab = quad_get_opposite_corner(uvv, a, b)
         bc = quad_get_opposite_corner(uvv, b, c)
         cd = quad_get_opposite_corner(uvv, c, d)
@@ -573,45 +533,24 @@ def quad_get_opposite_corners_plus(uvv):
             return {}
         return cand
 
-
-
-
-
-
-
-
 def rect_grid_bfs_dist(start):
     distances = {start: 0}
     q = deque([start])
     while q:
         cur = q.popleft()
-        for nxt in cur.uvverts_set:
+        for nxt in cur.uvverts:
             if nxt not in distances:
                 distances[nxt] = distances[cur] + 1
                 q.append(nxt)
     return distances
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 def is_quad_grid(uvi):
     if has_triangle(uvi):
         return False
     if uvi.degree not in (2, 3, 4):
         return False
-    for uvv in uvi.uvverts_set:
-        l = len(uvv.uvverts_set)
+    for uvv in uvi.uvverts:
+        l = len(uvv.uvverts)
         c = len(quad_get_opposite_corners(uvv))
         if l <= 1 or l >= 5:
             return False
@@ -631,21 +570,19 @@ def is_quad_grid(uvi):
 
 def is_knot_grid(uvi):
     assert uvi.is_quad_grid, "Must first evaluate if is quad grid"
-    star4 = [uvv for uvv in uvi.uvverts_set if len(uvv.uvverts_set) == 4]
+    star4 = [uvv for uvv in uvi.uvverts if len(uvv.uvverts) == 4]
     for uvv in star4:
         if len(quad_get_opposite_corners(uvv)) == 2:
             return True
     return False
 
-
-
 def grid_size(uvi):
-    uvvs = uvi.uvverts_set
-    V, E = len(uvvs), len(uvi.uvedges_set)
+    uvvs = uvi.uvverts
+    V, E = len(uvvs), len(uvi.uvedges)
 
-    border = {v for v in uvvs if len(v.uvverts_set) in (2, 3)}
-    corners = [v for v in border if len(v.uvverts_set) == 2]
-    interns = [v for v in uvvs if len(v.uvverts_set) == 4]
+    border = {v for v in uvvs if len(v.uvverts) in (2, 3)}
+    corners = [v for v in border if len(v.uvverts) == 2]
+    interns = [v for v in uvvs if len(v.uvverts) == 4]
     if len(corners) != 4 or len(border) + len(interns) != V:
         return None
 
@@ -657,7 +594,7 @@ def grid_size(uvi):
     walk = [A]
     cur = A
     while True:
-        nexts = [uvv for uvv in cur.uvverts_set if uvv in border and uvv not in walk]
+        nexts = [uvv for uvv in cur.uvverts if uvv in border and uvv not in walk]
         if not nexts:
             break
         if len(nexts) > 1 and cur is not A:
@@ -665,10 +602,10 @@ def grid_size(uvi):
         cur = nexts[0]
         walk.append(cur)
 
-    if len(walk) != len(border) or A not in cur.uvverts_set:
+    if len(walk) != len(border) or A not in cur.uvverts:
         return None
 
-    ordered_corners = [(uvv, idx) for idx, uvv in enumerate(walk) if len(uvv.uvverts_set) == 2]
+    ordered_corners = [(uvv, idx) for idx, uvv in enumerate(walk) if len(uvv.uvverts) == 2]
     (A, a), (X, x), (B, b), (Y, y) = ordered_corners
     m = x - a + 1
     n = b - x + 1
@@ -685,7 +622,6 @@ def grid_size(uvi):
         return m, n, A, X, B, Y
     else:
         return n, m, A, Y, B, X
-
 
 def is_rect_grid(uvi):
     return grid_size(uvi) is not None
@@ -711,6 +647,27 @@ def is_rect_grid(uvi):
 # MARK: - FUNCTIONS
 #=========#=========#=========#=========#=========#=========#=========#=========
 
+
+def move_uvv(uvv, uv): # need bmesh.update_edit_mesh(mesh) after
+    for l in uvv.loops_list:
+        l[uvv.uvmap].uv = uv
+
+def rotate_uvvs(uvvs, angle, center):
+    M = Matrix.Rotation(angle, 2)
+    center = Vector(center)
+    for uvv in uvvs:
+        uv = M @ (uvv.uv - center) + center
+        for l in uvv.loops_list:
+            l[uvv.uvmap].uv = uv
+
+def get_uvi_length(uvi):
+    return sum([get_uve_length(uve) for uve in uvi.uvedges])
+
+def get_uve_length(uve):
+    du = uve.uvv2.uv.x - uve.uvv1.uv.x
+    dv = uve.uvv2.uv.y - uve.uvv1.uv.y
+    return sqrt(du*du + dv*dv)
+
 def reverse_path(uvi):
     if uvi.is_path:
         n = len(uvi.sorted_uvverts)
@@ -719,17 +676,8 @@ def reverse_path(uvi):
         uvi.head, uvi.tail = (uvi.tail, uvi.head)
 
 def reverse_paths(uvmesh):
-    for uvi in uvmesh.uvislands_list:
+    for uvi in uvmesh.uvislands:
         reverse_path(uvi)
-
-
-
-
-
-
-
-
-
 
 def straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode):
     if uvi.is_path:
@@ -740,7 +688,7 @@ def straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode
         offset = target_center - htcenter
         htdist = (uv_head - uv_tail).length
         if keep_paths_length:
-            ratio = uvi.get_length() / htdist
+            ratio = get_uvi_length(uvi) / htdist
             uv_head = htcenter + ratio * (uv_head - htcenter)
             uv_tail = htcenter + ratio * (uv_tail - htcenter)
         uv_head += offset
@@ -751,7 +699,7 @@ def straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode
         # path (1)           o-------o-----o------------o
         # uvvert idx (4)     0       1     2            3
         # distribution (4)   0       0.3   0.5          1.0  (normalized)
-        uvv_count = len(uvi.uvverts_set)
+        uvv_count = len(uvi.uvverts)
         uve_count = uvv_count - 1
         distribution = [0.0] * uvv_count # init only size
         if even_point_distribution:
@@ -760,29 +708,20 @@ def straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode
         else:
             acc = 0.0
             for i in range(uve_count):
-                acc += uvi.sorted_uvedges[i].get_length()
-                distribution[i + 1] = acc / uvi.get_length()
+                acc += get_uve_length(uvi.sorted_uvedges[i])
+                distribution[i + 1] = acc / get_uvi_length(uvi)
 
         for i, uvv in enumerate(uvi.sorted_uvverts):
             uv = lerp(uv_head, uv_tail, distribution[i])
-            uvv.move(uv)
+            move_uvv(uvv, uv)
 
 def straighten_paths(uvmesh, keep_paths_length, even_point_distribution, center_mode):
-    for uvi in uvmesh.uvislands_list:
+    for uvi in uvmesh.uvislands:
         straighten_path(uvi, keep_paths_length, even_point_distribution, center_mode)
-
-
-
-
-
-
-
-
-
 
 def align_paths(uvmesh):
     # Assert paths are straight
-    paths = [uvi for uvi in uvmesh.uvislands_list if uvi.is_path]
+    paths = [uvi for uvi in uvmesh.uvislands if uvi.is_path]
     angles = [uvvs_angle(p.head, p.tail) for p in paths]
     # Mean undirected angle
     c = sum(cos(2 * a) for a in angles)
@@ -792,26 +731,17 @@ def align_paths(uvmesh):
     for p, a in zip(paths, angles):
         delta = (mean - a + pi / 2) % pi - pi / 2
         center = get_center(p, "HEADTAIL")
-        rotate(p.uvverts_set, delta, center)
-
-
-
-
-
-
-
-
-
+        rotate_uvvs(p.uvverts, delta, center)
 
 def align_paths_on_grid(uvmesh):
-    paths = [uvi for uvi in uvmesh.uvislands_list if uvi.is_path]
+    paths = [uvi for uvi in uvmesh.uvislands if uvi.is_path]
     if len(paths) <= 1:
         utils.alert(f"Need at least 2 paths, found {len(paths)}")
         return
 
     uvvs = []
     for p in paths:
-        uvvs.extend(p.uvverts_set)
+        uvvs.extend(p.uvverts)
 
     [[mu, mv], [Mu, Mv]] = get_bounding_box(uvvs)
     width = Mu - mu
@@ -848,7 +778,7 @@ def align_paths_on_grid(uvmesh):
     if horizontal_paths_piled_vertically:
         countY = len(spaths)
         for y, p in enumerate(spaths):
-            countX = len(p.uvverts_set)
+            countX = len(p.uvverts)
             reverse = p.head.uv[0] > p.tail.uv[0]
             for x, uvv in enumerate(p.sorted_uvverts):
                 wx = (x / (countX - 1)) # (no div 0: path has min 2 uvv)
@@ -857,26 +787,20 @@ def align_paths_on_grid(uvmesh):
                     wx = 1 - wx
                 u = lerp(mu, Mu, wx)
                 v = lerp(mv, Mv, wy)
-                uvv.move((u, v))
+                uv = (u, v)
+                move_uvv(uvv, uv)
     else:
         countX = len(spaths)
         for x, p in enumerate(spaths):
-            countY = len(p.uvverts_set)
+            countY = len(p.uvverts)
             reverse = p.head.uv[1] > p.tail.uv[1]
             for y, uvv in enumerate(p.sorted_uvverts):
                 wx = x / (countX - 1)
                 wy = (y / (countY - 1)) if not reverse else (1 - y / (countY - 1))
                 u = lerp(mu, Mu, wx)
                 v = lerp(mv, Mv, wy)
-                uvv.move((u, v))
-
-
-
-
-
-
-
-
+                uv = (u, v)
+                move_uvv(uvv, uv)
 
 def align_grid(uvi, mode="CORNERS"):
     grid_res = grid_size(uvi)
@@ -885,21 +809,21 @@ def align_grid(uvi, mode="CORNERS"):
         if mode == "CORNERS":
             tl, tr, br, bl = A.uv.copy(), X.uv.copy(), B.uv.copy(), Y.uv.copy()
         elif mode == "BBOX":
-            [[mu, mv], [Mu, Mv]] = get_bounding_box(uvi.uvverts_set)
+            [[mu, mv], [Mu, Mv]] = get_bounding_box(uvi.uvverts)
             tl = Vector((mu, Mv))
             tr = Vector((Mu, Mv))
             br = Vector((Mu, mv))
             bl = Vector((mu, mv))
         else:
             raise RuntimeError(f"Unknown mode in align grid: {mode}")
-        for uvv in uvi.uvverts_set:
+        for uvv in uvi.uvverts:
             wx = uvv.x / (m - 1)
             wy = 1 - uvv.y / (n - 1)
             uv = bilinear(tl, tr, br, bl, wx, wy)
-            uvv.move(uv)
+            move_uvv(uvv, uv)
 
 def align_grids(uvmesh, mode="CORNERS"):
-    for uvi in uvmesh.uvislands_list:
+    for uvi in uvmesh.uvislands:
         align_grid(uvi, mode)
 
 
@@ -919,7 +843,7 @@ def print_uvmesh(uvmesh):
     lines = []
     from datetime import datetime
 
-    for uvi in uvmesh.uvislands_list:
+    for uvi in uvmesh.uvislands:
         line = ""
         if uvi.is_path: line += "path, "
         if uvi.is_ring: line += "ring, "
@@ -929,12 +853,11 @@ def print_uvmesh(uvmesh):
         if any([uvi.is_quad_grid, uvi.is_knot_grid,uvi.is_rect_grid]): line += "grid, "
         if line == "": line += "other, "
         line += "|"
-        line += f"{len(uvi.uvverts_set)} uvvs, "
-        line += f"{len(uvi.uvedges_set)} uves, "
-        line += f"{len(uvi.uvquads_set)} uvqs, "
-        line += f"{uvi.get_length():.3f} length"
+        line += f"{len(uvi.uvverts)} uvvs, "
+        line += f"{len(uvi.uvedges)} uves, "
+        line += f"{len(uvi.uvquads)} uvqs, "
+        line += f"{get_uvi_length(uvi):.3f} length"
         lines.append("• " + line)
-
 
     print("\n".join(lines))
     return lines
