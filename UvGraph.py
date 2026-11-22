@@ -226,6 +226,7 @@ class UvMesh:
         self.uvislands: list["UvIsland"] = []
 
         # SNAP LOOPS (why? why not? idk...) -> need cluterization somehow
+        clusterize_loops(bm, uvmap, self.epsilon)
         for f in bm.faces:
             for l in f.loops:
                 u, v = l[self.uvmap].uv
@@ -353,20 +354,102 @@ class UvMesh:
 
 
 def clusterize_loops(bm, uvmap, epsilon):
-    loops = [l for f in bm.faces for l in f.loops]
+    uvs = set()
+    # uvs:
+    # - may be less than loops
+    # - tuple of 3 floats, (u, v, 0)
+    for f in bm.faces:
+        for l in f.loops:
+            u, v = l[uvmap].uv
+            coord = (u, v, 0)
+            uvs.add(coord)
+    kd = KDTree(len(uvs))
+    for i, coord in enumerate(uvs):
+        kd.insert(coord, i)
+    kd.balance()
+    clusters_co_id = dict() # { cordinate : cluster id }
+    security = len(uvs)
+    while uvs:
+        security -= 1
+        if security < 0:
+            raise RuntimeError("Infinite loop?")
+        coord = uvs.pop()
+        res = kd.find_range(coord, epsilon)
+        near_coords = [tuple(coord) for coord, idx, dst in res]
+        for near_coord in near_coords:
+            if near_coord in clusters_co_id.keys():
+                cid = clusters_co_id[near_coord]
+                for coord in near_coords:
+                    clusters_co_id[coord] = cid
+                break
+    clustersid_id_co = {cid: set() for cid in clusters_co_id.values()}
+    for coord, cid in clusters_co_id.items():
+        clustersid_id_co[cid].add(coord)
+    eps2 = epsilon * epsilon
+    for cid, coords in clustersid_id_co.items():
+        for coord_1 in coords:
+            for coord_2 in cos:
+                if coord_1 == coord_2:
+                    continue
+                dx = coord_1[0] - coord_2[0]
+                dy = coord_1[1] - coord_2[1]
+                if dx * dx + dy * dy > eps2:
+                    error_message = "UVs clusterization impossible"
+                    utils.alert(error_message)
+                    raise RuntimeError(error_message)
+    print("Ok so far")
+    clusters = dict() # { average coordinate : loops }
+    for cid, coord in clustersid_id_co.items():
+        a = 1
+
+
+def clusterize_loop2(bm, uvmap, epsilon): # WIP
+    loops = {l for f in bm.faces for l in f.loops}
     kd = KDTree(len(loops))
     for i, l in enumerate(loops):
-        kd.insert(l[uvmap].uv, i)
+        u, v = l[uvmap].uv
+        coord = (u, v, 0)
+        kd.insert(coord, i)
     kd.balance()
-    stack = set(loops)
-    clusters = []
-    """
-    while stack:
-        cur = stack.pop()
-        uv = cur[uvmap].uv
-        res = kd.find(uv)
-        for pos, idx, dst in res:
-    """
+    clusters_co_id = dict() # { cordinate : cluster id }
+    security = len(uvs)
+    while uvs:
+        security -= 1
+        if security < 0:
+            raise RuntimeError("Infinite loop?")
+        coord = uvs.pop()
+        res = kd.find_range(coord, epsilon)
+        near_coords = [tuple(coord) for coord, idx, dst in res]
+        for near_coord in near_coords:
+            if near_coord in clusters_co_id.keys():
+                cid = clusters_co_id[near_coord]
+                for coord in near_coords:
+                    clusters_co_id[coord] = cid
+                break
+    clustersid_id_co = {cid: set() for cid in clusters_co_id.values()}
+    for coord, cid in clusters_co_id.items():
+        clustersid_id_co[cid].add(coord)
+    eps2 = epsilon * epsilon
+    for cid, coords in clustersid_id_co.items():
+        for coord_1 in coords:
+            for coord_2 in cos:
+                if coord_1 == coord_2:
+                    continue
+                dx = coord_1[0] - coord_2[0]
+                dy = coord_1[1] - coord_2[1]
+                if dx * dx + dy * dy > eps2:
+                    error_message = "UVs clusterization impossible"
+                    utils.alert(error_message)
+                    raise RuntimeError(error_message)
+    print("Ok so far")
+    clusters = dict() # { average coordinate : loops }
+    for cid, coord in clustersid_id_co.items():
+        a = 1
+
+
+
+
+
 
 
 
