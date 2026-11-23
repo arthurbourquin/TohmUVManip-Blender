@@ -98,9 +98,9 @@ class UvQuad:
         assert c in d.uvverts
         assert a in c.uvverts
 
-        # a - b
-        # |   |
-        # c - d
+        # a - b    we only ensure opposites
+        # |   |    a opposite of d
+        # c - d    d opposite if c
         self.uvverts = [a, b, d, c]
         self.uvedges = [
             UvEdge(a, b),
@@ -113,9 +113,7 @@ class UvQuad:
         return hash(self.key)
 
     def __eq__(self, other):
-        return (isinstance(other, UvQuad)
-            and other.key == self.key
-        )
+        return isinstance(other, UvQuad) and other.key == self.key
 
 
 
@@ -243,7 +241,6 @@ class UvMesh:
                 uvv.select = False
                 uvverts[uvkey] = uvv
             uvverts[uvkey].loops.append(l)
-        assert len(uvverts) == len(set(uvverts.keys()))
 
         uvedges: dict[tuple[UvVert, UvVert], UvEdge] = {}
         i = 0
@@ -262,7 +259,6 @@ class UvMesh:
                     uve.index = i; i += 1
                     uve.select = False
                     uvedges[uvv_pair] = uve
-        assert len(uvedges) == len(set(uvedges.keys()))
 
         # SET SELECTED
         # set selection based on loops uv_select_edge
@@ -457,7 +453,7 @@ def get_center(uvi, mode):
 def has_triangle(uvi):
     for uvv1 in uvi.uvverts:
         for uvv2 in uvv1.uvverts:
-            if uvv1 is uvv2: # useless I think...
+            if uvv1 is uvv2:
                 continue
             if len(uvv1.uvverts & uvv2.uvverts) != 0:
                 return True
@@ -569,28 +565,24 @@ def rect_grid_bfs_dist(start):
                 q.append(nxt)
     return distances
 
+
 def is_quad_grid(uvi):
-    if has_triangle(uvi):
-        return False
-    if uvi.degree not in (2, 3, 4):
-        return False
+    if uvi.degree not in (2, 3, 4): return False
+    if has_triangle(uvi): return False
     for uvv in uvi.uvverts:
         l = len(uvv.uvverts)
         c = len(quad_get_opposite_corners(uvv))
-        if l <= 1 or l >= 5:
-            return False
-        elif not c:
-            return False
-        elif l == 2:
-            if c != 1:
-                return False
-        elif l == 3:
-            if c != 2:
-                return False
-        elif l == 4:
-            if c not in (2, 3, 4):
+        match l:
+            case 2: # corner
+                if c != 1: return False
+            case 3: # border
+                if c != 2: return False
+            case 4: # c=2->checker c=3->neg.corner c=4->intern
+                if c not in (2, 3, 4): return False
+            case _:
                 return False
     return True
+
 
 
 def is_knot_grid(uvi):
