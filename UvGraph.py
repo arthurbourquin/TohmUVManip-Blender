@@ -175,10 +175,10 @@ class UvIsland:
         grid_res = grid_size(self)
         if grid_res is not None:
             self.is_rect_grid = self.is_quad_grid = True
-            # mesh       dA         dY         sum        x          y      
-            # A . . X    0 1 2 3    2 3 4 5    2 4 6 8    0 1 2 3    0 0 0 0
-            # . . . .    1 2 3 4    1 2 3 4    2 4 6 8    0 1 2 3    1 1 1 1
+            # mesh       A-dist     Y-dist     sum        x          y      
             # Y . . B    2 3 4 5    0 1 2 3    2 4 6 8    0 1 2 3    2 2 2 2
+            # . . . .    1 2 3 4    1 2 3 4    2 4 6 8    0 1 2 3    1 1 1 1
+            # A . . X    0 1 2 3    2 3 4 5    2 4 6 8    0 1 2 3    0 0 0 0
             self.grid_width, self.grid_height, A, X, B, Y = grid_res
             dA = rect_grid_bfs_dist(A)
             dY = rect_grid_bfs_dist(Y)
@@ -289,9 +289,6 @@ class UvMesh:
                     if uvea is not uveb:
                         uvea.uvedges.add(uveb)
 
-        print(len(uvverts), "uvverts", len(selected_uvverts), "selected")
-        print(len(uvedges), "uvedges", len(selected_uvedges), "selected")
-
         # CREATE ISLANDS
 
         uvvert_lists = []
@@ -343,6 +340,7 @@ class UvMesh:
 #=========#=========#=========#=========#=========#=========#=========#=========
 # MARK: - UTILITY
 #=========#=========#=========#=========#=========#=========#=========#=========
+
 
 
 
@@ -554,7 +552,7 @@ def quad_get_opposite_corners_plus(uvv):
             return {}
         return cand
 
-def rect_grid_bfs_dist(start):
+def rect_grid_bfs_dist(start:UvVert):
     distances = {start: 0}
     q = deque([start])
     while q:
@@ -566,7 +564,7 @@ def rect_grid_bfs_dist(start):
     return distances
 
 
-def is_quad_grid(uvi):
+def is_quad_grid(uvi:UvIsland):
     if uvi.degree not in (2, 3, 4): return False
     if has_triangle(uvi): return False
     for uvv in uvi.uvverts:
@@ -584,34 +582,85 @@ def is_quad_grid(uvi):
     return True
 
 
-
-def is_knot_grid(uvi):
+def is_knot_grid(uvi:UvIsland):
     assert uvi.is_quad_grid, "Must first evaluate if is quad grid"
-    star4 = [uvv for uvv in uvi.uvverts if len(uvv.uvverts) == 4]
-    for uvv in star4:
-        if len(quad_get_opposite_corners(uvv)) == 2:
-            return True
+    for uvv in uvi.uvverts:
+        if len(uvv.uvverts) == 4:
+            if len(quad_get_opposite_corners(uvv)) == 2:
+                return True
     return False
 
-def grid_size(uvi):
+def grid_size(uvi:UvIsland):
     uvvs = uvi.uvverts
-    V, E = len(uvvs), len(uvi.uvedges)
-
-    border = {v for v in uvvs if len(v.uvverts) in (2, 3)}
-    corners = [v for v in border if len(v.uvverts) == 2]
-    interns = [v for v in uvvs if len(v.uvverts) == 4]
-    if len(corners) != 4 or len(border) + len(interns) != V:
+    if len(uvvs) < 4:
         return None
 
-    v1, v2, v3, v4 = [Vector(uvv.uv) for uvv in corners]
-    center = (v1 + v2 + v3 + v4) / 4
-    visually_sorted_corners = sorted(corners, key=lambda uvv: -angle(center, uvv.uv))
+    corners_ = [uvv for uvv in uvvs if len(uvv.uvverts) == 2]
+    vecs = [Vector(uvv.uv) for uvv in corners_]
+    center = sum(vecs, Vector((0, 0))) / 4
+    corners = sorted(corners_, key=lambda uvv: -angle(center, uvv.uv))
+    #    6 5 4
+    #   7     3
+    #    0 1 2
 
-    A = visually_sorted_corners[0]
+    # Quad case
+    if len(uvvs) == 4:
+        A = corners[0]
+        B_ = uvvs - (A.uvverts | {A})
+        if not B_ or len(B_) != 1:
+            return None
+        B = next(iter(B_))
+        X, Y = uvvs - {A, B}
+        if X is corners[1]:
+            return 2, 2, A, X, B, Y
+        else:
+            return 2, 2, A, Y, B, X
+
+    V, E = len(uvvs), len(uvi.uvedges)
+    borders = [uvv for uvv in uvvs if len(uvv.uvverts) in (2, 3)]
+    interns = [uvv for uvv in uvvs if len(uvv.uvverts) == 4]
+    if len(corners) != 4 or len(borders) + len(interns) != V:
+        return None
+
+    # Ribbon case
+    # Y - + + - B
+    # |   | |   |
+    # A - + + - X
+    if len(interns) == 0:
+        A = corners[0]
+        Y_ = set(corners) & A.uvverts
+        if len(Y_) != 1:
+            return None
+        Y = next(iter(Y_))
+        ax = A; yb = Y
+        XB = set(corners) - {A, Y}
+        m = 1
+        security = len(uvvs)
+        visited = set()
+        while ax not in XB and yb not in XB and security > 0:
+            ax_ = ax.uvverts - ({yb} | visited)
+            yb_ = yb.uvverts - ({ax} | visited)
+            assert len(ax_) == 1, f"not 1: {len(ax_)}"
+            assert len(yb_) == 1, f"not 1: {len(yb_)}"
+            visited.update((ax, yb))
+            ax = next(iter(ax_))
+            yb = next(iter(yb_))
+            m += 1
+            security -= 1
+        X = ax; B = yb
+        if X is corners[1]:
+            return m, 2, A, X, B, Y
+        else:
+            return 2, m, A, Y, B, X
+        
+
+    # Other case
+    A = corners[0]
     walk = [A]
     cur = A
     while True:
-        nexts = [uvv for uvv in cur.uvverts if uvv in border and uvv not in walk]
+        print(cur.index)
+        nexts = [uvv for uvv in cur.uvverts if uvv in borders and uvv not in walk]
         if not nexts:
             break
         if len(nexts) > 1 and cur is not A:
@@ -619,7 +668,7 @@ def grid_size(uvi):
         cur = nexts[0]
         walk.append(cur)
 
-    if len(walk) != len(border) or A not in cur.uvverts:
+    if len(walk) != len(borders) or A not in cur.uvverts:
         return None
 
     ordered_corners = [(uvv, idx) for idx, uvv in enumerate(walk) if len(uvv.uvverts) == 2]
@@ -634,7 +683,7 @@ def grid_size(uvi):
         return None
     if len(interns) != (m - 2) * (n - 2):
         return None
-    flip = ordered_corners[1] == visually_sorted_corners[1]
+    flip = ordered_corners[1] == corners[1]
     if flip:
         return m, n, A, X, B, Y
     else:
