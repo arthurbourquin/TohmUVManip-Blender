@@ -652,7 +652,6 @@ def grid_size(uvi:UvIsland):
             return m, 2, A, X, B, Y
         else:
             return 2, m, A, Y, B, X
-        
 
     # Other case
     A = corners[0]
@@ -874,7 +873,7 @@ def align_grid(uvi, mode="CORNERS"):
     if grid_res:
         m, n, A, X, B, Y = grid_res
         if mode == "CORNERS":
-            tl, tr, br, bl = A.uv.copy(), X.uv.copy(), B.uv.copy(), Y.uv.copy()
+            tl, tr, br, bl = [Vector(N.uv) for N in [A, X, B, Y]]
         elif mode == "BBOX":
             [[mu, mv], [Mu, Mv]] = get_bounding_box(uvi.uvverts)
             tl = Vector((mu, Mv))
