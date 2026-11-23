@@ -47,10 +47,10 @@ class UvVert:
         self.uvedges: set["UvEdge"] = set()
 
     @property
-    def u(self): return self.uv.x
+    def u(self): return self.uv[0]
     @property
-    def v(self): return self.uv.y
-        
+    def v(self): return self.uv[1]
+
 
 
 
@@ -240,8 +240,10 @@ class UvMesh:
                 uvv = UvVert(uvmap)
                 uvv.uv = uvkey
                 uvv.index = i; i += 1
+                uvv.select = False
                 uvverts[uvkey] = uvv
             uvverts[uvkey].loops.append(l)
+        assert len(uvverts) == len(set(uvverts.keys()))
 
         uvedges: dict[tuple[UvVert, UvVert], UvEdge] = {}
         i = 0
@@ -258,23 +260,26 @@ class UvMesh:
                     uvv1, uvv2 = uvv_pair
                     uve = UvEdge(uvv1, uvv2)
                     uve.index = i; i += 1
+                    uve.select = False
                     uvedges[uvv_pair] = uve
+        assert len(uvedges) == len(set(uvedges.keys()))
 
         # SET SELECTED
         # set selection based on loops uv_select_edge
-        for l in self.loops:
-        for l1 in uve.uvv1.loops:
-            if l1.uv_select_edge:
-                uvkey1 = self.loops[l1]
-                uvkey2 = self.loops[l1.link_loop_next]
-
-        selected_uvedges = {k: uve for k, uve in uvedges.items() if uve.select}
-
-        for uve in selected_uvedges.values():
-            uve.uvv1.select = True
-            uve.uvv2.select = True
-
-        selected_uvverts = {k: uvv for k, uvv in uvverts.items() if uvv.select}
+        for f in bm.faces:
+            for l in f.loops:
+                if l.uv_select_edge:
+                    uvvkey1 = self.loops[l]
+                    uvvkey2 = self.loops[l.link_loop_next]
+                    uvv1 = uvverts[uvvkey1]
+                    uvv2 = uvverts[uvvkey2]
+                    uvekey = order_pair(uvv1, uvv2)
+                    uve = uvedges[uvekey]
+                    uvv1.select = True
+                    uvv2.select = True
+                    uve.select = True
+        selected_uvedges = {k: uve for k, uve in uvedges.items() if uve.select == True}
+        selected_uvverts = {k: uvv for k, uvv in uvverts.items() if uvv.select == True}
 
         # LINK
         for uve in selected_uvedges.values():
@@ -288,6 +293,8 @@ class UvMesh:
                     if uvea is not uveb:
                         uvea.uvedges.add(uveb)
 
+        print(len(uvverts), "uvverts", len(selected_uvverts), "selected")
+        print(len(uvedges), "uvedges", len(selected_uvedges), "selected")
 
         # CREATE ISLANDS
 
@@ -330,7 +337,6 @@ class UvMesh:
             uvverts_left -= uvi
 
         self.uvislands = [UvIsland(uvverts=uvvs) for uvvs in uvvert_lists]
-
 
 
 
@@ -684,8 +690,8 @@ def get_uvi_length(uvi):
     return sum([get_uve_length(uve) for uve in uvi.uvedges])
 
 def get_uve_length(uve):
-    du = uve.uvv2.uv.x - uve.uvv1.uv.x
-    dv = uve.uvv2.uv.y - uve.uvv1.uv.y
+    du = uve.uvv2.u - uve.uvv1.u
+    dv = uve.uvv2.v - uve.uvv1.v
     return sqrt(du*du + dv*dv)
 
 def reverse_path(uvi):
