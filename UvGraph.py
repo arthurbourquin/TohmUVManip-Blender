@@ -32,7 +32,8 @@ from . import utils
 class UvVert:
     def __init__(self, uvmap):
         self.uvmap = uvmap
-        self.index = None
+        self.uv: tuple[float, float]
+        self.index: int
         self.select = None
         self.depth = -1 # for bfs and paths indexing
         self.isvisited = False
@@ -41,12 +42,10 @@ class UvVert:
         self.i = None
         self.j = None
 
-        self.loops_list = []
+        self.loops = []
         self.uvverts: set["UvVert"] = set()
         self.uvedges: set["UvEdge"] = set()
 
-    @property
-    def uv(self): return self.loops_list[0][self.uvmap].uv if self.loops_list else (None, None)
     @property
     def u(self): return self.uv.x
     @property
@@ -220,77 +219,70 @@ class UvMesh:
         self.bm    = bm
         self.uvmap = uvmap
 
-        self.precision = 5
+        self.precision = 4
         self.epsilon = 10 ** -self.precision
 
-        self.uvislands: list["UvIsland"] = []
-
-        # SNAP LOOPS (why? why not? idk...) -> need cluterization somehow
-        clusterize_loops2(bm, uvmap, self.epsilon)
-        for f in bm.faces:
-            for l in f.loops:
-                u, v = l[self.uvmap].uv
-                u = round(u, self.precision)
-                v = round(v, self.precision)
-                l[self.uvmap].uv = Vector((u, v))
-        bmesh.update_edit_mesh(mesh)
+        self.uvislands: list[UvIsland] = []
+        self.loops:     list[BMLoop]   = []
 
         # GET UVVERTS AND UVEDGES
-        uvvert_dict = {}
-        for f in bm.faces:
-            for l in f.loops:
-                uv = tuple(l[self.uvmap].uv)
-                if uv not in uvvert_dict:
-                    uvvert_dict[uv] = UvVert(self.uvmap)
-                uvvert_dict[uv].loops_list.append(l)
-        for i, uvv in enumerate(uvvert_dict.values()):
-            uvv.index = i
 
-        uvedge_dict = {}
+        clusterization = loop_clustersization(bm, uvmap, self.epsilon)
+        if clusterization is None:
+            raise RuntimeError("Ambigous UV clusters, clean UVs of shrink threshold")
+        assert sorted([l.index for l in clusterization.keys()]) == list(range(len(clusterization)))
+        self.loops = clusterization
+
+        uvverts: dict[tuple[float, float], UvVert] = {}
+        i = 0
+        for l, uvkey in self.loops.items():
+            if uvkey not in uvverts:
+                uvv = UvVert(uvmap)
+                uvv.uv = uvkey
+                uvv.index = i; i += 1
+                uvverts[uvkey] = uvv
+            uvverts[uvkey].loops.append(l)
+
+        uvedges: dict[tuple[UvVert, UvVert], UvEdge] = {}
+        i = 0
         for f in bm.faces:
             for l in f.loops:
-                uva = tuple(l[self.uvmap].uv)
-                uvb = tuple(l.link_loop_next[self.uvmap].uv)
-                uvva = uvvert_dict[uva]
-                uvvb = uvvert_dict[uvb]
+                uvkeya = self.loops[l]
+                uvkeyb = self.loops[l.link_loop_next]
+                if uvkeya == uvkeyb:
+                    continue
+                uvva = uvverts[uvkeya]
+                uvvb = uvverts[uvkeyb]
                 uvv_pair = order_pair(uvva, uvvb)
-                if not uvv_pair in uvedge_dict:
+                if not uvv_pair in uvedges:
                     uvv1, uvv2 = uvv_pair
-                    uvedge_dict[uvv_pair] = UvEdge(uvv1, uvv2)
-        for i, uve in enumerate(uvedge_dict.values()):
-            uve.index = i
+                    uve = UvEdge(uvv1, uvv2)
+                    uve.index = i; i += 1
+                    uvedges[uvv_pair] = uve
 
         # SET SELECTED
         # set selection based on loops uv_select_edge
-        for uve in uvedge_dict.values():
-            for l in uve.uvv1.loops_list:
-                if l.uv_select_edge:
-                    if l.link_loop_next[self.uvmap].uv == uve.uvv2.uv:
-                        uve.select = True
-                        break
-            if uve.select:
-                continue
-            for l in uve.uvv2.loops_list:
-                if l.uv_select_edge:
-                    if l.link_loop_next[self.uvmap].uv == uve.uvv1.uv:
-                        uve.select = True
-                        break
+        for l in self.loops:
+        for l1 in uve.uvv1.loops:
+            if l1.uv_select_edge:
+                uvkey1 = self.loops[l1]
+                uvkey2 = self.loops[l1.link_loop_next]
 
-        selected_uvedge_dict = {k: uve for k, uve in uvedge_dict.items() if uve.select}
+        selected_uvedges = {k: uve for k, uve in uvedges.items() if uve.select}
 
-        for uve in selected_uvedge_dict.values():
+        for uve in selected_uvedges.values():
             uve.uvv1.select = True
             uve.uvv2.select = True
 
-        selected_uvvert_dict = {k: uvv for k, uvv in uvvert_dict.items() if uvv.select}
+        selected_uvverts = {k: uvv for k, uvv in uvverts.items() if uvv.select}
 
         # LINK
-        for uve in selected_uvedge_dict.values():
+        for uve in selected_uvedges.values():
             uve.uvv1.uvverts.add(uve.uvv2)
             uve.uvv2.uvverts.add(uve.uvv1)
             uve.uvv1.uvedges.add(uve)
             uve.uvv2.uvedges.add(uve)
-        for uvv in selected_uvvert_dict.values():
+        for uvv in selected_uvverts.values():
             for uvea in uvv.uvedges:
                 for uveb in uvv.uvedges:
                     if uvea is not uveb:
@@ -302,7 +294,7 @@ class UvMesh:
         uvvert_lists = []
 
         # with leaf islands
-        leaves = set([uvv for uvv in selected_uvvert_dict.values() if len(uvv.uvverts) == 1])
+        leaves = set([uvv for uvv in selected_uvverts.values() if len(uvv.uvverts) == 1])
         while leaves:
             uvi = set()
             uvvert_lists.append(uvi)
@@ -320,7 +312,7 @@ class UvMesh:
             leaves -= uvi
 
         # without leaves islands
-        uvverts_left = set([uvv for uvv in selected_uvvert_dict.values() if not uvv.isvisited])
+        uvverts_left = set([uvv for uvv in selected_uvverts.values() if not uvv.isvisited])
         while uvverts_left:
             uvi = set()
             uvvert_lists.append(uvi)
@@ -346,102 +338,49 @@ class UvMesh:
 
 
 
-
-
 #=========#=========#=========#=========#=========#=========#=========#=========
 # MARK: - UTILITY
 #=========#=========#=========#=========#=========#=========#=========#=========
 
 
-def clusterize_loops(bm, uvmap, epsilon):
-    uvs = set()
-    # uvs:
-    # - may be less than loops
-    # - tuple of 3 floats, (u, v, 0)
-    for f in bm.faces:
-        for l in f.loops:
-            u, v = l[uvmap].uv
-            coord = (u, v, 0)
-            uvs.add(coord)
-    kd = KDTree(len(uvs))
-    for i, coord in enumerate(uvs):
-        kd.insert(coord, i)
-    kd.balance()
-    clusters_co_id = dict() # { cordinate : cluster id }
-    security = len(uvs)
-    while uvs:
-        security -= 1
-        if security < 0:
-            raise RuntimeError("Infinite loop?")
-        coord = uvs.pop()
-        res = kd.find_range(coord, epsilon)
-        near_coords = [tuple(coord) for coord, idx, dst in res]
-        for near_coord in near_coords:
-            if near_coord in clusters_co_id.keys():
-                cid = clusters_co_id[near_coord]
-                for coord in near_coords:
-                    clusters_co_id[coord] = cid
-                break
-    clusters_id_co = {cid: set() for cid in clusters_co_id.values()}
-    for coord, cid in clusters_co_id.items():
-        clusters_id_co[cid].add(coord)
-    eps2 = epsilon * epsilon
-    for cid, coords in clusters_id_co.items():
-        for coord_1 in coords:
-            for coord_2 in cos:
-                if coord_1 == coord_2:
-                    continue
-                dx = coord_1[0] - coord_2[0]
-                dy = coord_1[1] - coord_2[1]
-                if dx * dx + dy * dy > eps2:
-                    error_message = "UVs clusterization impossible"
-                    utils.alert(error_message)
-                    raise RuntimeError(error_message)
-    print("Ok so far")
-    clusters = dict() # { average coordinate : loops }
-    for cid, coord in clusters_id_co.items():
-        a = 1
 
 
-def clusterize_loops2(bm, uvmap, epsilon):
-    loops = sorted([l for f in bm.faces for l in f.loops], key=lambda l: l.index)
+def loop_clustersization(bm, uvmap, epsilon):
+    loops = {l.index: l for f in bm.faces for l in f.loops}
     kd = KDTree(len(loops))
-    for l in loops:
+    for i, l in loops.items():
         u, v = l[uvmap].uv
-        coord = (u, v, 0)
-        kd.insert(coord, l.index)
+        pos = (u, v, 0)
+        kd.insert(pos, i)
     kd.balance()
-    clusters_co_id = dict() # { loop : cluster id }
-    security = len(loops)
+    clusterization: dict[BMLoop, tuple[float, float]] = dict() # { loop : uvkey }
     while loops:
-        security -= 1
-        if security < 0:
-            raise RuntimeError("Infinite loop?")
-        loop = loops.pop()
-        u, v = loop[uvmap].uv
-        coord = (u, v, 0)
-        res = kd.find_range(coord, epsilon)
-        for pos, idx, dst in res:
-            a = 1 # WIP WIP WIP
-    clusters_id_co = {cid: set() for cid in clusters_co_id.values()}
-    for coord, cid in clusters_co_id.items():
-        clusters_id_co[cid].add(coord)
-    eps2 = epsilon * epsilon
-    for cid, coords in clusters_id_co.items():
-        for coord_1 in coords:
-            for coord_2 in cos:
-                if coord_1 == coord_2:
-                    continue
-                dx = coord_1[0] - coord_2[0]
-                dy = coord_1[1] - coord_2[1]
-                if dx * dx + dy * dy > eps2:
-                    error_message = "UVs clusterization impossible"
-                    utils.alert(error_message)
-                    raise RuntimeError(error_message)
-    print("Ok so far")
-    clusters = dict() # { average coordinate : loops }
-    for cid, coord in clusters_id_co.items():
-        a = 1
+        idx0 = next(iter(loops))
+        l0 = loops[idx0] # pop below
+        u, v = l0[uvmap].uv
+        pos0 = (u, v, 0)
+        res1 = kd.find_range(pos0, epsilon)
+        pos1s = [p for p, _, _ in res1]
+        idx1s = [i for _, i, _ in res1]
+        for pos1 in pos1s:
+            res2 = kd.find_range(pos1, epsilon)
+            for pos2, idx2, dst2 in res2:
+                if idx2 not in idx1s:
+                    return None
+        average_pos = sum([Vector(p) for p in pos1s], Vector((0, 0, 0))) / len(pos1s)
+        u, v, _ = average_pos
+        key_pos = (u, v)
+        assert idx0 in idx1s
+        for idx in idx1s:
+            if idx in loops:
+                l = loops.pop(idx) # remove loop from stack
+                clusterization[l] = key_pos
+    return clusterization
+        
+
+
+
+
 
 
 
@@ -729,15 +668,16 @@ def is_rect_grid(uvi):
 
 
 def move_uvv(uvv, uv): # need bmesh.update_edit_mesh(mesh) after
-    for l in uvv.loops_list:
-        l[uvv.uvmap].uv = uv
+    offset = Vector(uv) - Vector(uvv.uv)
+    for l in uvv.loops:
+        l[uvv.uvmap].uv += offset
 
 def rotate_uvvs(uvvs, angle, center):
     M = Matrix.Rotation(angle, 2)
     center = Vector(center)
     for uvv in uvvs:
         uv = M @ (uvv.uv - center) + center
-        for l in uvv.loops_list:
+        for l in uvv.loops:
             l[uvv.uvmap].uv = uv
 
 def get_uvi_length(uvi):
@@ -921,8 +861,6 @@ def align_grids(uvmesh, mode="CORNERS"):
 
 def print_uvmesh(uvmesh):
     lines = []
-    from datetime import datetime
-
     for uvi in uvmesh.uvislands:
         line = ""
         if uvi.is_path: line += "path, "
@@ -938,7 +876,6 @@ def print_uvmesh(uvmesh):
         line += f"{len(uvi.uvquads)} uvqs, "
         line += f"{get_uvi_length(uvi):.3f} length"
         lines.append("• " + line)
-
     print("\n".join(lines))
     return lines
 
