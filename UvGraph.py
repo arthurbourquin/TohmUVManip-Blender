@@ -7,6 +7,8 @@ from collections import deque
 import bmesh
 from mathutils import Vector, Matrix
 from mathutils.kdtree import KDTree
+from bmesh.types import BMLoop
+
 
 # Tohm UV Manip
 from . import utils
@@ -42,9 +44,9 @@ class UvVert:
         self.i = None
         self.j = None
 
-        self.loops = []
-        self.uvverts: set["UvVert"] = set()
-        self.uvedges: set["UvEdge"] = set()
+        self.loops:   list[BMLoop] = list()
+        self.uvverts: set[UvVert]  = set()
+        self.uvedges: set[UvEdge]  = set()
 
     @property
     def u(self): return self.uv[0]
@@ -62,7 +64,8 @@ class UvEdge:
         self.uvv1: UvVert
         self.uvv2: UvVert
         self.select = None
-        self.uvedges: set["UvEdge"] = set()
+        self.uvedges: set[UvEdge] = set()
+        self.h = None # for grids: is horizontal
 
         self.uvv1, self.uvv2 = order_pair(uvv1, uvv2)
 
@@ -83,25 +86,17 @@ class UvEdge:
 
 class UvQuad:
     def __init__(self, uvvs):
-        self.uvverts: list["UvVert"]
-        self.uvedges: list["UvEdge"]
-        self.i = None
-        self.j = None
-        self.key = frozenset(uvvs)
+        self.uvverts: list[UvVert] = None
+        self.uvedges: list[UvEdge] = None
+        self.i: int = None
+        self.j: int = None
+        self.key: frozenset[UvVert] = frozenset(uvvs)
 
-        assert len(uvvs) == 4
-        a = next(iter(uvvs))
-        d = [uvv for uvv in uvvs if uvv is not a and uvv not in a.uvverts][0]
-        b, c = [uvv for uvv in uvvs if uvv is not a and uvv is not d]
-        assert b in a.uvverts
-        assert d in b.uvverts
-        assert c in d.uvverts
-        assert a in c.uvverts
+        abcd = check_quad(uvvs)
+        assert abcd
+        a, b, c, d = abcd
 
-        # a - b    we only ensure opposites
-        # |   |    a opposite of d
-        # c - d    d opposite if c
-        self.uvverts = [a, b, d, c]
+        self.uvverts = abcd
         self.uvedges = [
             UvEdge(a, b),
             UvEdge(b, d),
@@ -122,19 +117,16 @@ class UvQuad:
 # MARK: - UvIsland
 
 class UvIsland:
-    def __init__(self, uvverts=None, uvedges=None):
-        uvverts = uvverts if uvverts is not None else set()
-        uvedges = uvedges if uvedges is not None else set()
+    def __init__(self, uvvs):
+        self.uvverts: set[UvVert] = set(uvvs)
+        self.uvedges: set[UvEdge] = set()
+        self.uvquads: set[UvQuad] = set()
+        self.sorted_uvverts: list[UvVert]
+        self.sorted_uvedges: list[UvEdge]
 
-        self.uvverts: set["UvVert"]
-        self.uvedges: set["UvEdge"]
-        self.uvquads: set["UvQuad"] = set()
-        self.sorted_uvverts: list["UvVert"]
-        self.sorted_uvedges: list["UvEdge"]
-
-        self.root = None
-        self.head = None
-        self.tail = None
+        self.root: UvVert = None
+        self.head: UvVert = None
+        self.tail: UvVert = None
 
         self.is_path = None
         self.is_ring = None
@@ -145,12 +137,6 @@ class UvIsland:
         self.grid_width = None
         self.grid_height = None
 
-        self.uvedges = set(uvedges)
-        for uve in self.uvedges:
-            self.uvverts.add(uve.uvv1)
-            self.uvverts.add(uve.uvv2)
-
-        self.uvverts = set(uvverts)
         for uvv in self.uvverts:
             self.uvedges.update(uvv.uvedges)
 
@@ -329,7 +315,7 @@ class UvMesh:
                     stack.append((nxt, depth + 1))
             uvverts_left -= uvi
 
-        self.uvislands = [UvIsland(uvverts=uvvs) for uvvs in uvvert_lists]
+        self.uvislands = [UvIsland(uvvs) for uvvs in uvvert_lists]
 
 
 
@@ -379,13 +365,30 @@ def loop_clustersization(bm, uvmap, epsilon):
         
 
 
+def rotate_list(l, n):
+    if not l or len(l) == 1:
+        return l
+    n %= len(l)
+    return l[-n:] + l[:-n] if n else list(l) 
 
 
-
-
-
-
-
+def check_quad(uvvs) -> list[UvVert] | None:
+    # d - c    ensure: a - b - c - d
+    # |   |    ensure: a opp c
+    # a - b    ensure: b opp d
+    uvvs = set(uvvs)
+    if len(uvvs) != 4: return None
+    a = next(iter(uvvs))
+    c_ = uvvs - ({a} | a.uvverts)
+    if len(c_) != 1: return None
+    c = next(iter(c_))
+    b, d = uvvs - {a, c}
+    if b not in a.uvverts: return None
+    if c not in b.uvverts: return None
+    if d not in c.uvverts: return None
+    if a not in d.uvverts: return None
+    if b in d.uvverts: return None
+    return [a, b, c, d]
 
 
 
@@ -564,6 +567,12 @@ def rect_grid_bfs_dist(start:UvVert):
     return distances
 
 
+
+def quad_grid_walk(uvi:UvIsland):
+    
+
+
+
 def is_quad_grid(uvi:UvIsland):
     if uvi.degree not in (2, 3, 4): return False
     if has_triangle(uvi): return False
@@ -605,6 +614,9 @@ def grid_size(uvi:UvIsland):
 
     # Quad case
     if len(uvvs) == 4:
+        mnop = check_quad(uvvs)
+        if not mnop:
+            return None
         A = corners[0]
         B_ = uvvs - (A.uvverts | {A})
         if not B_ or len(B_) != 1:
@@ -622,10 +634,10 @@ def grid_size(uvi:UvIsland):
     if len(corners) != 4 or len(borders) + len(interns) != V:
         return None
 
-    # Ribbon case
-    # Y - + + - B
-    # |   | |   |
-    # A - + + - X
+    # Ribbon case (min 3x2)
+    # Y - o - yb-> o - B
+    # |   |   |    |   |
+    # A - o - ax-> o - X
     if len(interns) == 0:
         A = corners[0]
         Y_ = set(corners) & A.uvverts
@@ -640,8 +652,6 @@ def grid_size(uvi:UvIsland):
         while ax not in XB and yb not in XB and security > 0:
             ax_ = ax.uvverts - ({yb} | visited)
             yb_ = yb.uvverts - ({ax} | visited)
-            assert len(ax_) == 1, f"not 1: {len(ax_)}"
-            assert len(yb_) == 1, f"not 1: {len(yb_)}"
             visited.update((ax, yb))
             ax = next(iter(ax_))
             yb = next(iter(yb_))
@@ -653,12 +663,17 @@ def grid_size(uvi:UvIsland):
         else:
             return 2, m, A, Y, B, X
 
-    # Other case
+    # Other case (min 3x3)
+    #  clean                        fold
+    #  Y - o - B    X - o - B       Y        X   B        X
+    #  |   |   |    |   |   |       |  \  /  |   |  \  /  |
+    #  o - o - o    o - o - o       o -    - o   o -    - o
+    #  |   |   |    |   |   |       |  /  \  |   |  /  \  |
+    #  A - o - X    A - o - Y       A        B   A        Y
     A = corners[0]
     walk = [A]
     cur = A
     while True:
-        print(cur.index)
         nexts = [uvv for uvv in cur.uvverts if uvv in borders and uvv not in walk]
         if not nexts:
             break
